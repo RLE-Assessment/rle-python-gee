@@ -1,0 +1,115 @@
+{
+  "type": "FeatureCollection",
+  "columns": {
+    "COD": "String",
+    "COD_new": "String",
+    "ECO_NAME": "String",
+    "ECRG": "String",
+    "EFG1": "String",
+    "EFG2": "String",
+    "EFG_Etter": "String",
+    "GETyp_CODn": "String",
+    "Glob_Typol": "String",
+    "OBJECTID": "Long",
+    "Shape_Area": "Float",
+    "Shape_Leng": "Float",
+    "system:index": "String"
+  },
+  "version": 1769205371324946,
+  "id": "projects/goog-rle-assessments/assets/columbia/GETCol",
+  "properties": {
+    "system:asset_size": 173423836
+  },
+  "features": [
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [-75.70, 10.14],
+            [-75.68, 10.14],
+            [-75.68, 10.13],
+            [-75.70, 10.13],
+            [-75.70, 10.14]
+          ]
+        ]
+      },
+      "id": "00020000000000000957",
+      "properties": {
+        "COD": "B36",
+        "COD_new": "B0",
+        "ECO_NAME": "Amazon-Orinoco-Southern Caribbean mangroves",
+        "ECRG": "AmOriSCar_mg",
+        "EFG1": "MFT1.2",
+        "EFG2": "MFT1.2",
+        "EFG_Etter": "MFT1.2",
+        "GETyp_CODn": "MFT1.2_AmOriSCar_mg_B0",
+        "Glob_Typol": "MFT1.2_AmOriSCar_mg_B36",
+        "OBJECTID": 37579,
+        "Shape_Area": 12345.6789,
+        "Shape_Leng": 12345.6789
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [-75.70, 10.14],
+            [-75.69, 10.14],
+            [-75.69, 10.13],
+            [-75.70, 10.13],
+            [-75.70, 10.14]
+          ]
+        ]
+      },
+      "id": "00020000000000001d80",
+      "properties": {
+        "COD": "B10",
+        "COD_new": "B8",
+        "ECO_NAME": "Sinú Valley dry forests",
+        "ECRG": "Sinú Valley df",
+        "EFG1": "T1.2",
+        "EFG2": "T1.2",
+        "EFG_Etter": "T1.2",
+        "GETyp_CODn": "T1.2_Sinú Valley df_B8",
+        "Glob_Typol": "T1.2_Sinú Valley df_B10",
+        "OBJECTID": 1969,
+        "Shape_Area": 12345.6789,
+        "Shape_Leng": 12345.6789
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [-75.69, 10.15],
+            [-75.68, 10.15],
+            [-75.68, 10.14],
+            [-75.69, 10.14],
+            [-75.69, 10.15]
+          ]
+        ]
+      },
+      "id": "00020000000000001d82",
+      "properties": {
+        "COD": "B10",
+        "COD_new": "B8",
+        "ECO_NAME": "Sinú Valley dry forests",
+        "ECRG": "Sinú Valley df",
+        "EFG1": "T1.2",
+        "EFG2": "T1.2",
+        "EFG_Etter": "T1.2",
+        "GETyp_CODn": "T1.2_Sinú Valley df_B8",
+        "Glob_Typol": "T1.2_Sinú Valley df_B10",
+        "OBJECTID": 1971,
+        "Shape_Area": 12345.6789,
+        "Shape_Leng": 12345.6789
+      }
+    }
+  ]
+}

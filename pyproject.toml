@@ -31,3 +31,9 @@ packages = ["src/gee_redlist"]
 dev = [
     "pytest>=8.4.2",
 ]
+
+[tool.pytest.ini_options]
+markers = [
+    "unit: Unit tests (mocked, fast, no Earth Engine authentication required)",
+    "integration: Integration tests (requires Earth Engine authentication, slower)",
+]

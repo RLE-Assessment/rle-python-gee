@@ -1,5 +1,8 @@
 """Tests for ee_rle module."""
 
+import json
+from pathlib import Path
+
 import pytest
 from unittest.mock import Mock, patch, MagicMock
 import ee
@@ -21,6 +24,176 @@ def get_test_geometry():
     return ee.Geometry.Polygon(TEST_GEOMETRY_COORDS)
 
 
+@pytest.mark.unit
+class TestEcosystems:
+    """Tests for the Ecosystems class."""
+
+    @patch('gee_redlist.ee_rle.ee.data')
+    @patch('gee_redlist.ee_rle.ee.FeatureCollection')
+    def test_ecosystems_loads_vector_asset(self, mock_fc, mock_data):
+        """Test that Ecosystems loads a TABLE asset as FeatureCollection."""
+        mock_data.getAsset.return_value = {'type': 'TABLE'}
+        mock_fc_instance = Mock()
+        mock_fc.return_value = mock_fc_instance
+
+        ecosystem = ee_rle.Ecosystems('projects/test/assets/vector_asset')
+
+        mock_data.getAsset.assert_called_once_with('projects/test/assets/vector_asset')
+        mock_fc.assert_called_once_with('projects/test/assets/vector_asset')
+        assert ecosystem.asset_type == 'TABLE'
+        assert ecosystem.data == mock_fc_instance
+
+    @patch('gee_redlist.ee_rle.ee.data')
+    @patch('gee_redlist.ee_rle.ee.Image')
+    def test_ecosystems_loads_raster_asset(self, mock_image, mock_data):
+        """Test that Ecosystems loads an IMAGE asset as Image."""
+        mock_data.getAsset.return_value = {'type': 'IMAGE'}
+        mock_image_instance = Mock()
+        mock_image.return_value = mock_image_instance
+
+        ecosystem = ee_rle.Ecosystems('projects/test/assets/raster_asset')
+
+        mock_data.getAsset.assert_called_once_with('projects/test/assets/raster_asset')
+        mock_image.assert_called_once_with('projects/test/assets/raster_asset')
+        assert ecosystem.asset_type == 'IMAGE'
+        assert ecosystem.data == mock_image_instance
+
+    @patch('gee_redlist.ee_rle.ee.data')
+    def test_ecosystems_raises_for_unsupported_type(self, mock_data):
+        """Test that Ecosystems raises ValueError for unsupported asset types."""
+        mock_data.getAsset.return_value = {'type': 'FOLDER'}
+
+        with pytest.raises(ValueError) as exc_info:
+            ee_rle.Ecosystems('projects/test/assets/folder')
+
+        assert "Unsupported asset type 'FOLDER'" in str(exc_info.value)
+
+    @patch('gee_redlist.ee_rle.ee.data')
+    @patch('gee_redlist.ee_rle.ee.FeatureCollection')
+    def test_ecosystems_stores_asset_id(self, mock_fc, mock_data):
+        """Test that Ecosystems stores the asset_id."""
+        mock_data.getAsset.return_value = {'type': 'TABLE'}
+
+        asset_id = 'projects/goog-rle-assessments/assets/columbia/GETCol'
+        ecosystem = ee_rle.Ecosystems(asset_id)
+
+        assert ecosystem.asset_id == asset_id
+
+    @patch('gee_redlist.ee_rle.ee.data')
+    def test_ecosystems_functional_group_dataframe_raises_for_image(self, mock_data):
+        """Test that functional_group_dataframe() raises ValueError for IMAGE assets."""
+        mock_data.getAsset.return_value = {'type': 'IMAGE'}
+
+        with patch('gee_redlist.ee_rle.ee.Image'):
+            ecosystem = ee_rle.Ecosystems('projects/test/assets/raster')
+
+        with pytest.raises(ValueError) as exc_info:
+            _ = ecosystem.functional_group_dataframe()
+
+        assert "only available for TABLE assets" in str(exc_info.value)
+
+    @patch('gee_redlist.ee_rle.ee.data')
+    @patch('gee_redlist.ee_rle.ee.FeatureCollection')
+    def test_ecosystems_functional_group_dataframe_returns_dataframe(self, mock_fc, mock_data):
+        """Test that functional_group_dataframe() returns a pandas DataFrame with MultiIndex."""
+        import pandas as pd
+
+        # Setup mocks
+        mock_data.getAsset.return_value = {'type': 'TABLE'}
+
+        # Mock the FeatureCollection and its methods
+        mock_fc_instance = Mock()
+        mock_fc.return_value = mock_fc_instance
+
+        # Mock first().propertyNames() chain for getting column names
+        mock_first = Mock()
+        mock_property_names = Mock()
+        mock_fc_instance.first.return_value = mock_first
+        mock_first.propertyNames.return_value = mock_property_names
+        # Mock the remove() calls for each excluded column
+        mock_property_names.remove.return_value = mock_property_names
+
+        # Mock distinct() to return unique combinations
+        mock_distinct_fc = Mock()
+        mock_fc_instance.distinct.return_value = mock_distinct_fc
+
+        # Mock toList() and map() chain
+        mock_size = Mock()
+        mock_distinct_fc.size.return_value = mock_size
+        mock_list = Mock()
+        mock_distinct_fc.toList.return_value = mock_list
+
+        # Mock map() result - returns list of dicts directly
+        records = [
+            {'COD': 'B36', 'ECO_NAME': 'Test Ecosystem', 'EFG1': 'MFT1.2'},
+            {'COD': 'B10', 'ECO_NAME': 'Another Ecosystem', 'EFG1': 'T1.2'}
+        ]
+        mock_mapped_list = Mock()
+        mock_list.map.return_value = mock_mapped_list
+        mock_mapped_list.getInfo.return_value = records
+
+        # Create the Ecosystems instance with column names specified
+        ecosystem = ee_rle.Ecosystems(
+            'projects/test/assets/vector_asset',
+            get_level3_column='EFG1',
+            get_level4_column='COD'
+        )
+
+        # Get the dataframe
+        df = ecosystem.functional_group_dataframe()
+
+        # Verify it's a DataFrame
+        assert isinstance(df, pd.DataFrame)
+
+        # Verify we have 2 rows
+        assert len(df) == 2
+
+        # Verify it has a MultiIndex with expected names
+        assert isinstance(df.index, pd.MultiIndex)
+        assert df.index.names == ['EFG1', 'COD']
+
+        # Verify the index values are correct
+        assert ('MFT1.2', 'B36') in df.index
+        assert ('T1.2', 'B10') in df.index
+
+        # Verify index columns are not in regular columns
+        assert 'EFG1' not in df.columns
+        assert 'COD' not in df.columns
+
+    def test_ecosystems_accepts_featurecollection(self):
+        """Test that Ecosystems accepts an ee.FeatureCollection directly."""
+        mock_fc = Mock()
+        mock_fc.name.return_value = 'FeatureCollection'
+
+        ecosystem = ee_rle.Ecosystems(mock_fc)
+
+        assert ecosystem.asset_type == 'TABLE'
+        assert ecosystem.data == mock_fc
+        assert ecosystem.asset_id is None
+
+    def test_ecosystems_accepts_image(self):
+        """Test that Ecosystems accepts an ee.Image directly."""
+        mock_image = Mock()
+        mock_image.name.return_value = 'Image'
+
+        ecosystem = ee_rle.Ecosystems(mock_image)
+
+        assert ecosystem.asset_type == 'IMAGE'
+        assert ecosystem.data == mock_image
+        assert ecosystem.asset_id is None
+
+    def test_ecosystems_raises_for_invalid_ee_type(self):
+        """Test that Ecosystems raises ValueError for unsupported EE types."""
+        mock_geometry = Mock()
+        mock_geometry.name.return_value = 'Geometry'
+
+        with pytest.raises(ValueError) as exc_info:
+            ee_rle.Ecosystems(mock_geometry)
+
+        assert "Unsupported data type 'Geometry'" in str(exc_info.value)
+
+
+@pytest.mark.unit
 class TestMakeEOO:
     """Tests for the make_eoo function."""
 
@@ -136,6 +309,7 @@ class TestMakeEOO:
         assert result == mock_hull_final
 
 
+@pytest.mark.unit
 class TestAreaKm2:
     """Tests for the area_km2 function."""
 
@@ -171,6 +345,7 @@ class TestAreaKm2:
         assert result == mock_result
 
 
+@pytest.mark.unit
 class TestEnsureAssetFolderExists:
     """Tests for the ensure_asset_folder_exists function."""
 
@@ -222,6 +397,7 @@ class TestEnsureAssetFolderExists:
         assert result is True
 
 
+@pytest.mark.unit
 class TestCreateAssetFolder:
     """Tests for the create_asset_folder function."""
 
@@ -273,6 +449,108 @@ class TestCreateAssetFolder:
         assert result is True
 
 
+@pytest.mark.unit
+class TestMakeAOO:
+    """Tests for the make_aoo function."""
+
+    @patch('gee_redlist.ee_rle.ee')
+    @patch('builtins.print')
+    def test_make_aoo_basic(self, mock_print, mock_ee):
+        """Test that make_aoo calls the correct Earth Engine methods."""
+        # Create mock objects
+        mock_image = Mock()
+        mock_geometry = Mock()
+        mock_grid = Mock()
+        mock_reduced = Mock()
+        mock_filtered = Mock()
+        mock_size = Mock()
+
+        # Setup the mock chain
+        mock_ee.Image.return_value = mock_image
+        mock_image.geometry.return_value = mock_geometry
+        mock_geometry.coveringGrid.return_value = mock_grid
+        mock_image.reduceRegions.return_value = mock_reduced
+        mock_reduced.filter.return_value = mock_filtered
+        mock_filtered.size.return_value = mock_size
+        mock_size.getInfo.return_value = 42
+
+        # Mock the get_aoo_grid_projection
+        with patch('gee_redlist.ee_rle.get_aoo_grid_projection') as mock_proj:
+            mock_projection = Mock()
+            mock_proj.return_value = mock_projection
+
+            # Call the function
+            ee_rle.make_aoo('projects/test/assets/fractional_coverage')
+
+            # Verify the chain of calls
+            mock_ee.Image.assert_called_once_with('projects/test/assets/fractional_coverage')
+            mock_image.geometry.assert_called_once()
+            mock_geometry.coveringGrid.assert_called_once_with(mock_projection)
+
+            # Verify reduceRegions was called
+            mock_image.reduceRegions.assert_called_once()
+            call_kwargs = mock_image.reduceRegions.call_args[1]
+            assert call_kwargs['collection'] == mock_grid
+            assert call_kwargs['reducer'] == mock_ee.Reducer.mean.return_value
+
+            # Verify filter was called
+            mock_reduced.filter.assert_called_once()
+
+            # Verify size and getInfo were called
+            mock_filtered.size.assert_called_once()
+            mock_size.getInfo.assert_called_once()
+
+            # Verify print was called
+            mock_print.assert_called_once_with('aoo_grid_cell_count = 42')
+
+    @patch('gee_redlist.ee_rle.ee')
+    @patch('builtins.print')
+    def test_make_aoo_with_different_asset_id(self, mock_print, mock_ee):
+        """Test make_aoo with a different asset ID."""
+        # Setup minimal mocks
+        mock_image = Mock()
+        mock_ee.Image.return_value = mock_image
+        mock_image.geometry.return_value.coveringGrid.return_value = Mock()
+        mock_image.reduceRegions.return_value.filter.return_value.size.return_value.getInfo.return_value = 10
+
+        with patch('gee_redlist.ee_rle.get_aoo_grid_projection'):
+            # Call with different asset ID
+            ee_rle.make_aoo('projects/goog-rle-assessments/assets/MMR-T1_1_1/a00_grid')
+
+            # Verify ee.Image was called with correct asset ID
+            mock_ee.Image.assert_called_once_with('projects/goog-rle-assessments/assets/MMR-T1_1_1/a00_grid')
+
+            # Verify print output
+            mock_print.assert_called_once_with('aoo_grid_cell_count = 10')
+
+    @patch('gee_redlist.ee_rle.ee')
+    @patch('builtins.print')
+    def test_make_aoo_filter_gt_zero(self, mock_print, mock_ee):
+        """Test that make_aoo filters cells with mean > 0."""
+        # Setup mocks
+        mock_image = Mock()
+        mock_reduced = Mock()
+        mock_filter = Mock()
+
+        mock_ee.Image.return_value = mock_image
+        mock_image.geometry.return_value.coveringGrid.return_value = Mock()
+        mock_image.reduceRegions.return_value = mock_reduced
+        mock_reduced.filter.return_value = mock_filter
+        mock_filter.size.return_value.getInfo.return_value = 5
+
+        with patch('gee_redlist.ee_rle.get_aoo_grid_projection'):
+            ee_rle.make_aoo('test_asset')
+
+            # Verify filter was called
+            mock_reduced.filter.assert_called_once()
+
+            # Get the filter argument and verify it's gt('mean', 0)
+            filter_arg = mock_reduced.filter.call_args[0][0]
+            assert filter_arg == mock_ee.Filter.gt.return_value
+            mock_ee.Filter.gt.assert_called_once_with('mean', 0)
+
+
+@pytest.mark.integration
 class TestIntegrationWithRealEE:
     """Integration tests using real Earth Engine objects (requires authentication)."""
 
@@ -443,3 +721,122 @@ class TestIntegrationWithRealEE:
                 ee.data.deleteAsset(test_folder)
             except Exception:
                 pass  # Ignore errors during cleanup
+
+    def test_make_aoo_integration(self):
+        """Integration test for make_aoo with real Earth Engine."""
+        import io
+        import sys
+
+        # Use an existing fractional coverage asset from the test ecosystem
+        asset_id = 'projects/goog-rle-assessments/assets/MMR-T1_1_1/a00_grid'
+
+        # Capture print output
+        captured_output = io.StringIO()
+        sys.stdout = captured_output
+
+        try:
+            # Call make_aoo
+            ee_rle.make_aoo(asset_id)
+
+            # Get the captured output
+            output = captured_output.getvalue()
+
+            # Verify output contains the expected format
+            assert 'aoo_grid_cell_count' in output, "Output should contain 'aoo_grid_cell_count'"
+            assert '=' in output, "Output should contain '='"
+
+            # Extract the count from output (format: "aoo_grid_cell_count = N")
+            count_str = output.split('=')[1].strip()
+            count = int(count_str)
+
+            # Verify the count is reasonable (should be > 0 for a real asset)
+            assert count > 0, f"Expected AOO grid cell count > 0, got {count}"
+            assert count < 100000, f"Expected AOO grid cell count < 100000, got {count}"
+
+        finally:
+            # Restore stdout
+            sys.stdout = sys.__stdout__
+
+    def test_ecosystems_vector_integration(self):
+        """Integration test for Ecosystems with a FeatureCollection from local test data."""
+        # Load test data and create EE FeatureCollection
+        test_data_path = Path(__file__).parent / 'test_data' / 'table.json'
+        with open(test_data_path) as f:
+            table_data = json.load(f)
+
+        fc = ee.FeatureCollection(table_data)
+        ecosystem = ee_rle.Ecosystems(fc)
+
+        # Verify attributes
+        assert ecosystem.asset_id is None
+        assert ecosystem.asset_type == 'TABLE'
+        assert isinstance(ecosystem.data, ee.FeatureCollection)
+
+        # Verify the FeatureCollection has features
+        count = ecosystem.data.size().getInfo()
+        assert count == 3, f"Expected 3 features, got {count}"
+
+    def test_ecosystems_raster_integration(self):
+        """Integration test for Ecosystems with a raster asset."""
+        asset_id = 'projects/goog-rle-assessments/assets/mm_ecosys_v7b'
+
+        ecosystem = ee_rle.Ecosystems(asset_id)
+
+        # Verify attributes
+        assert ecosystem.asset_id == asset_id
+        assert ecosystem.asset_type == 'IMAGE'
+        assert isinstance(ecosystem.data, ee.Image)
+
+        # Verify the Image has bands
+        band_names = ecosystem.data.bandNames().getInfo()
+        assert len(band_names) > 0, "Expected at least one band"
+
+    def test_ecosystems_functional_group_dataframe_integration(self):
+        """Integration test for Ecosystems.functional_group_dataframe() with local test data."""
+        import pandas as pd
+
+        # Load test data and create EE FeatureCollection
+        test_data_path = Path(__file__).parent / 'test_data' / 'table.json'
+        with open(test_data_path) as f:
+            table_data = json.load(f)
+
+        fc = ee.FeatureCollection(table_data)
+        ecosystem = ee_rle.Ecosystems(
+            fc,
+            get_level3_column='EFG1',
+            get_level4_column='Glob_Typol'
+        )
+        df = ecosystem.functional_group_dataframe()
+
+        # Verify result is a pandas DataFrame
+        assert isinstance(df, pd.DataFrame), "Expected pandas DataFrame"
+
+        # Verify excluded columns are not present
+        excluded_cols = {'OBJECTID', 'Shape_Area', 'Shape_Leng', 'system:index'}
+        for col in excluded_cols:
+            assert col not in df.columns, f"Column '{col}' should be excluded"
+
+        # Verify we have data (test data has 3 features with 2 unique Glob_Typol values)
+        assert len(df) > 0, "Expected at least one row in DataFrame"
+
+    def test_featurecollection_from_local_test_data(self):
+        """Test creating an EE FeatureCollection from local test data."""
+        # Load test data and create EE FeatureCollection
+        test_data_path = Path(__file__).parent / 'test_data' / 'table.json'
+        with open(test_data_path) as f:
+            table_data = json.load(f)
+
+        fc = ee.FeatureCollection(table_data)
+
+        # Verify the FeatureCollection was created correctly
+        assert fc.size().getInfo() == 3
+
+        # Verify properties are accessible
+        first_feature = fc.first().getInfo()
+        assert 'EFG1' in first_feature['properties']
+        assert 'Glob_Typol' in first_feature['properties']
+
+        # Verify we can get property values
+        efg1_values = fc.aggregate_array('EFG1').getInfo()
+        assert 'MFT1.2' in efg1_values
+        assert 'T1.2' in efg1_values
