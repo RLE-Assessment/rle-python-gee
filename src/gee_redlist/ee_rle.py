@@ -31,7 +31,7 @@ class Ecosystems:
         asset_type: The type of data ('TABLE' for vector, 'IMAGE' for raster).
         data: The ee.FeatureCollection or ee.Image containing ecosystem data.
         get_level3_column: Column name for GET Level 3 ecosystem functional group codes.
-        get_level4_column: Column name for GET Level 4 ecosystem type codes.
+        get_level456_column: Column name for GET Level 4 ecosystem type codes.
 
     Example:
         >>> import ee
@@ -53,8 +53,8 @@ class Ecosystems:
     def __init__(
         self,
         data: Union[str, ee.FeatureCollection, ee.Image],
-        get_level3_column: Optional[str] = None,
-        get_level4_column: Optional[str] = None
+        get_level3_column: Optional[str],
+        get_level456_column: Optional[str]
     ):
         """
         Initialize an Ecosystems instance.
@@ -69,17 +69,15 @@ class Ecosystems:
                 - ee.Image object
             get_level3_column: Column name containing GET (Global Ecosystem Typology)
                                Level 3 ecosystem functional group codes (e.g., 'EFG1').
-                               Only applicable for TABLE assets.
-            get_level4_column: Column name containing GET (Global Ecosystem Typology)
+            get_level456_column: Column name containing GET (Global Ecosystem Typology)
                                Level 4 ecosystem type codes (e.g., 'Glob_Typol').
-                               Only applicable for TABLE assets.
 
         Raises:
             ee.EEException: If asset_id doesn't exist or access is denied.
             ValueError: If the data type is not supported.
         """
         self.get_level3_column = get_level3_column
-        self.get_level4_column = get_level4_column
+        self.get_level456_column = get_level456_column
 
         if isinstance(data, str):
             # Treat as asset_id
@@ -122,7 +120,7 @@ class Ecosystems:
         Uses Earth Engine server-side grouped reduction for efficiency.
 
         Returns:
-            pd.DataFrame: DataFrame with MultiIndex (get_level3_column, get_level4_column).
+            pd.DataFrame: DataFrame with MultiIndex (get_level3_column, get_level456_column).
 
         Raises:
             ValueError: If the asset type is not TABLE or if column names are not specified.
@@ -130,9 +128,9 @@ class Ecosystems:
         if self.asset_type != 'TABLE':
             raise ValueError("dataframe property is only available for TABLE assets")
 
-        if self.get_level3_column is None or self.get_level4_column is None:
+        if self.get_level3_column is None or self.get_level456_column is None:
             raise ValueError(
-                "Both get_level3_column and get_level4_column must be specified "
+                "Both get_level3_column and get_level456_column must be specified "
                 "to use the dataframe property"
             )
 
@@ -144,7 +142,7 @@ class Ecosystems:
             group_cols = group_cols.remove(col)
 
         # Find distinct combinations of the L3 and L4 columns
-        distinct_pairs_fc = self.data.distinct([self.get_level3_column, self.get_level4_column])
+        distinct_pairs_fc = self.data.distinct([self.get_level3_column, self.get_level456_column])
 
         def extract_columns(feature):
             return ee.Feature(feature).toDictionary(group_cols)
@@ -154,7 +152,7 @@ class Ecosystems:
         # Get records as list of dictionaries and create DataFrame with MultiIndex
         records = distinct_pairs_list.getInfo()
         df = pd.DataFrame(records)
-        return df.set_index([self.get_level3_column, self.get_level4_column])
+        return df.set_index([self.get_level3_column, self.get_level456_column])
 
     def _repr_html_(self) -> str:
         """Return HTML representation for Jupyter notebook display."""
@@ -165,8 +163,8 @@ class Ecosystems:
 
         if self.get_level3_column:
             meta_rows.append(f"<tr><td><b>GET Level 3 Column</b></td><td>{self.get_level3_column}</td></tr>")
-        if self.get_level4_column:
-            meta_rows.append(f"<tr><td><b>GET Level 4 Column</b></td><td>{self.get_level4_column}</td></tr>")
+        if self.get_level456_column:
+            meta_rows.append(f"<tr><td><b>GET Level 4 Column</b></td><td>{self.get_level456_column}</td></tr>")
 
         data_table = ""
 
@@ -186,7 +184,7 @@ class Ecosystems:
                     for p in props:
                         if p == self.get_level3_column:
                             header_cells.append(f'<th style="padding: 4px 8px; border: 1px solid #ddd; background-color: #cce5ff; font-weight: bold;">{p}</th>')
-                        elif p == self.get_level4_column:
+                        elif p == self.get_level456_column:
                             header_cells.append(f'<th style="padding: 4px 8px; border: 1px solid #ddd; background-color: #d4edda; font-weight: bold;">{p}</th>')
                         else:
                             header_cells.append(f'<th style="padding: 4px 8px; border: 1px solid #ddd; background-color: #f5f5f5;">{p}</th>')
@@ -200,7 +198,7 @@ class Ecosystems:
                         for p in props:
                             if p == self.get_level3_column:
                                 cells.append(f'<td style="padding: 4px 8px; border: 1px solid #ddd; background-color: #cce5ff;">{prop_values.get(p, "")}</td>')
-                            elif p == self.get_level4_column:
+                            elif p == self.get_level456_column:
                                 cells.append(f'<td style="padding: 4px 8px; border: 1px solid #ddd; background-color: #d4edda;">{prop_values.get(p, "")}</td>')
                             else:
                                 cells.append(f'<td style="padding: 4px 8px; border: 1px solid #ddd;">{prop_values.get(p, "")}</td>')
