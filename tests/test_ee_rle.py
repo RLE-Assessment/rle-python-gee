@@ -36,7 +36,11 @@ class TestEcosystems:
         mock_fc_instance = Mock()
         mock_fc.return_value = mock_fc_instance
 
-        ecosystem = ee_rle.Ecosystems('projects/test/assets/vector_asset')
+        ecosystem = ee_rle.Ecosystems(
+            data='projects/test/assets/vector_asset',
+            get_level3_column='EFG1',
+            get_level456_column='COD'
+        )
 
         mock_data.getAsset.assert_called_once_with('projects/test/assets/vector_asset')
         mock_fc.assert_called_once_with('projects/test/assets/vector_asset')
@@ -51,7 +55,11 @@ class TestEcosystems:
         mock_image_instance = Mock()
         mock_image.return_value = mock_image_instance
 
-        ecosystem = ee_rle.Ecosystems('projects/test/assets/raster_asset')
+        ecosystem = ee_rle.Ecosystems(
+            'projects/test/assets/raster_asset',
+            get_level3_column=None,
+            get_level456_column=None
+        )
 
         mock_data.getAsset.assert_called_once_with('projects/test/assets/raster_asset')
         mock_image.assert_called_once_with('projects/test/assets/raster_asset')
@@ -64,7 +72,11 @@ class TestEcosystems:
         mock_data.getAsset.return_value = {'type': 'FOLDER'}
 
         with pytest.raises(ValueError) as exc_info:
-            ee_rle.Ecosystems('projects/test/assets/folder')
+            ee_rle.Ecosystems(
+                'projects/test/assets/folder',
+                get_level3_column=None,
+                get_level456_column=None
+            )
 
         assert "Unsupported asset type 'FOLDER'" in str(exc_info.value)
 
@@ -75,7 +87,11 @@ class TestEcosystems:
         mock_data.getAsset.return_value = {'type': 'TABLE'}
 
         asset_id = 'projects/goog-rle-assessments/assets/columbia/GETCol'
-        ecosystem = ee_rle.Ecosystems(asset_id)
+        ecosystem = ee_rle.Ecosystems(
+            asset_id,
+            get_level3_column='EFG1',
+            get_level456_column='COD'
+        )
 
         assert ecosystem.asset_id == asset_id
 
@@ -85,7 +101,11 @@ class TestEcosystems:
         mock_data.getAsset.return_value = {'type': 'IMAGE'}
 
         with patch('gee_redlist.ee_rle.ee.Image'):
-            ecosystem = ee_rle.Ecosystems('projects/test/assets/raster')
+            ecosystem = ee_rle.Ecosystems(
+                'projects/test/assets/raster',
+                get_level3_column='EFG1',
+                get_level456_column='COD'
+            )
 
         with pytest.raises(ValueError) as exc_info:
             _ = ecosystem.functional_group_dataframe()
@@ -136,7 +156,7 @@ class TestEcosystems:
         ecosystem = ee_rle.Ecosystems(
             'projects/test/assets/vector_asset',
             get_level3_column='EFG1',
-            get_level4_column='COD'
+            get_level456_column='COD'
         )
 
         # Get the dataframe
@@ -165,7 +185,11 @@ class TestEcosystems:
         mock_fc = Mock()
         mock_fc.name.return_value = 'FeatureCollection'
 
-        ecosystem = ee_rle.Ecosystems(mock_fc)
+        ecosystem = ee_rle.Ecosystems(
+            mock_fc,
+            get_level3_column='EFG1',
+            get_level456_column='COD'
+        )
 
         assert ecosystem.asset_type == 'TABLE'
         assert ecosystem.data == mock_fc
@@ -176,7 +200,11 @@ class TestEcosystems:
         mock_image = Mock()
         mock_image.name.return_value = 'Image'
 
-        ecosystem = ee_rle.Ecosystems(mock_image)
+        ecosystem = ee_rle.Ecosystems(
+            mock_image,
+            get_level3_column=None,
+            get_level456_column=None
+        )
 
         assert ecosystem.asset_type == 'IMAGE'
         assert ecosystem.data == mock_image
@@ -188,7 +216,11 @@ class TestEcosystems:
         mock_geometry.name.return_value = 'Geometry'
 
         with pytest.raises(ValueError) as exc_info:
-            ee_rle.Ecosystems(mock_geometry)
+            ee_rle.Ecosystems(
+                mock_geometry,
+                get_level3_column=None,
+                get_level456_column=None
+            )
 
         assert "Unsupported data type 'Geometry'" in str(exc_info.value)
 
@@ -765,7 +797,11 @@ class TestIntegrationWithRealEE:
             table_data = json.load(f)
 
         fc = ee.FeatureCollection(table_data)
-        ecosystem = ee_rle.Ecosystems(fc)
+        ecosystem = ee_rle.Ecosystems(
+            fc,
+            get_level3_column='EFG1',
+            get_level456_column='Glob_Typol'
+        )
 
         # Verify attributes
         assert ecosystem.asset_id is None
@@ -780,7 +816,11 @@ class TestIntegrationWithRealEE:
         """Integration test for Ecosystems with a raster asset."""
         asset_id = 'projects/goog-rle-assessments/assets/mm_ecosys_v7b'
 
-        ecosystem = ee_rle.Ecosystems(asset_id)
+        ecosystem = ee_rle.Ecosystems(
+            asset_id,
+            get_level3_column=None,
+            get_level456_column=None
+        )
 
         # Verify attributes
         assert ecosystem.asset_id == asset_id
@@ -804,7 +844,7 @@ class TestIntegrationWithRealEE:
         ecosystem = ee_rle.Ecosystems(
             fc,
             get_level3_column='EFG1',
-            get_level4_column='Glob_Typol'
+            get_level456_column='Glob_Typol'
         )
         df = ecosystem.functional_group_dataframe()
 
