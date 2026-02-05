@@ -3,14 +3,14 @@
 import pytest
 from unittest.mock import patch, MagicMock
 import ee
-from gee_redlist.ee_auth import check_authentication, is_authenticated, print_authentication_status
+from rle_python_gee.ee_auth import check_authentication, is_authenticated, print_authentication_status
 
 
 class TestAuthenticationFunctions:
     """Test suite for Earth Engine authentication functions."""
 
-    @patch('gee_redlist.ee_auth.ee.Initialize')
-    @patch('gee_redlist.ee_auth.ee.data.getAssetRoots')
+    @patch('rle_python_gee.ee_auth.ee.Initialize')
+    @patch('rle_python_gee.ee_auth.ee.data.getAssetRoots')
     def test_successful_authentication(self, mock_get_roots, mock_initialize):
         """Test successful authentication with project info."""
         mock_initialize.return_value = None
@@ -23,8 +23,8 @@ class TestAuthenticationFunctions:
         assert result['project'] is not None
         mock_initialize.assert_called_once()
 
-    @patch('gee_redlist.ee_auth.ee.Initialize')
-    @patch('gee_redlist.ee_auth.ee.data.getAssetRoots')
+    @patch('rle_python_gee.ee_auth.ee.Initialize')
+    @patch('rle_python_gee.ee_auth.ee.data.getAssetRoots')
     def test_authentication_without_project_info(self, mock_get_roots, mock_initialize):
         """Test authentication succeeds but can't get project info."""
         mock_initialize.return_value = None
@@ -36,7 +36,7 @@ class TestAuthenticationFunctions:
         assert 'could not retrieve project info' in result['message']
         assert result['project'] is None
 
-    @patch('gee_redlist.ee_auth.ee.Initialize')
+    @patch('rle_python_gee.ee_auth.ee.Initialize')
     def test_authentication_ee_exception(self, mock_initialize):
         """Test authentication fails with EE exception."""
         mock_initialize.side_effect = ee.EEException("Authentication required")
@@ -47,7 +47,7 @@ class TestAuthenticationFunctions:
         assert 'Earth Engine authentication failed' in result['message']
         assert result['project'] is None
 
-    @patch('gee_redlist.ee_auth.ee.Initialize')
+    @patch('rle_python_gee.ee_auth.ee.Initialize')
     def test_authentication_generic_exception(self, mock_initialize):
         """Test authentication fails with generic exception."""
         mock_initialize.side_effect = RuntimeError("Network error")
@@ -58,7 +58,7 @@ class TestAuthenticationFunctions:
         assert 'Authentication error' in result['message']
         assert result['project'] is None
 
-    @patch('gee_redlist.ee_auth.check_authentication')
+    @patch('rle_python_gee.ee_auth.check_authentication')
     def test_is_authenticated_true(self, mock_test_auth):
         """Test is_authenticated returns True when authenticated."""
         mock_test_auth.return_value = {
@@ -69,7 +69,7 @@ class TestAuthenticationFunctions:
 
         assert is_authenticated() is True
 
-    @patch('gee_redlist.ee_auth.check_authentication')
+    @patch('rle_python_gee.ee_auth.check_authentication')
     def test_is_authenticated_false(self, mock_test_auth):
         """Test is_authenticated returns False when not authenticated."""
         mock_test_auth.return_value = {
@@ -80,7 +80,7 @@ class TestAuthenticationFunctions:
 
         assert is_authenticated() is False
 
-    @patch('gee_redlist.ee_auth.check_authentication')
+    @patch('rle_python_gee.ee_auth.check_authentication')
     def test_print_authentication_status_success(self, mock_test_auth, capsys):
         """Test print_authentication_status with successful auth."""
         mock_test_auth.return_value = {
@@ -96,7 +96,7 @@ class TestAuthenticationFunctions:
         assert 'Success' in captured.out
         assert 'test-project' in captured.out
 
-    @patch('gee_redlist.ee_auth.check_authentication')
+    @patch('rle_python_gee.ee_auth.check_authentication')
     def test_print_authentication_status_failure(self, mock_test_auth, capsys):
         """Test print_authentication_status with failed auth."""
         mock_test_auth.return_value = {
@@ -112,7 +112,7 @@ class TestAuthenticationFunctions:
         assert 'Authentication required' in captured.out
         assert 'earthengine authenticate' in captured.out
 
-    @patch('gee_redlist.ee_auth.check_authentication')
+    @patch('rle_python_gee.ee_auth.check_authentication')
     def test_print_authentication_status_no_project(self, mock_test_auth, capsys):
         """Test print_authentication_status with success but no project."""
         mock_test_auth.return_value = {

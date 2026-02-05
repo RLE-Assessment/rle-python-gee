@@ -1,6 +1,6 @@
 """Example usage of the map.py module to create country maps."""
 
-from gee_redlist.map import create_country_map
+from rle_python_gee.map import create_country_map
 
 
 def main():

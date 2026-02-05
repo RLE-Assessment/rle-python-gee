@@ -1,5 +1,5 @@
 [project]
-name = "gee-redlist-python"
+name = "rle-python-gee"
 version = "0.1.13"
 description = "Tools for IUCN Red List analysis using Google Earth Engine"
 readme = "README.md"
@@ -25,7 +25,7 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/gee_redlist"]
+packages = ["src/rle_python_gee"]
 
 [dependency-groups]
 dev = [

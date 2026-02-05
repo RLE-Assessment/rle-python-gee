@@ -6,7 +6,7 @@ from pathlib import Path
 import pytest
 from unittest.mock import Mock, patch, MagicMock
 import ee
-from gee_redlist import ee_rle
+from rle_python_gee import ee_rle
 from google.auth import default
 
 
@@ -28,8 +28,8 @@ def get_test_geometry():
 class TestEcosystems:
     """Tests for the Ecosystems class."""
 
-    @patch('gee_redlist.ee_rle.ee.data')
-    @patch('gee_redlist.ee_rle.ee.FeatureCollection')
+    @patch('rle_python_gee.ee_rle.ee.data')
+    @patch('rle_python_gee.ee_rle.ee.FeatureCollection')
     def test_ecosystems_loads_vector_asset(self, mock_fc, mock_data):
         """Test that Ecosystems loads a TABLE asset as FeatureCollection."""
         mock_data.getAsset.return_value = {'type': 'TABLE'}
@@ -47,8 +47,8 @@ class TestEcosystems:
         assert ecosystem.asset_type == 'TABLE'
         assert ecosystem.data == mock_fc_instance
 
-    @patch('gee_redlist.ee_rle.ee.data')
-    @patch('gee_redlist.ee_rle.ee.Image')
+    @patch('rle_python_gee.ee_rle.ee.data')
+    @patch('rle_python_gee.ee_rle.ee.Image')
     def test_ecosystems_loads_raster_asset(self, mock_image, mock_data):
         """Test that Ecosystems loads an IMAGE asset as Image."""
         mock_data.getAsset.return_value = {'type': 'IMAGE'}
@@ -66,7 +66,7 @@ class TestEcosystems:
         assert ecosystem.asset_type == 'IMAGE'
         assert ecosystem.data == mock_image_instance
 
-    @patch('gee_redlist.ee_rle.ee.data')
+    @patch('rle_python_gee.ee_rle.ee.data')
     def test_ecosystems_raises_for_unsupported_type(self, mock_data):
         """Test that Ecosystems raises ValueError for unsupported asset types."""
         mock_data.getAsset.return_value = {'type': 'FOLDER'}
@@ -80,8 +80,8 @@ class TestEcosystems:
 
         assert "Unsupported asset type 'FOLDER'" in str(exc_info.value)
 
-    @patch('gee_redlist.ee_rle.ee.data')
-    @patch('gee_redlist.ee_rle.ee.FeatureCollection')
+    @patch('rle_python_gee.ee_rle.ee.data')
+    @patch('rle_python_gee.ee_rle.ee.FeatureCollection')
     def test_ecosystems_stores_asset_id(self, mock_fc, mock_data):
         """Test that Ecosystems stores the asset_id."""
         mock_data.getAsset.return_value = {'type': 'TABLE'}
@@ -95,12 +95,12 @@ class TestEcosystems:
 
         assert ecosystem.asset_id == asset_id
 
-    @patch('gee_redlist.ee_rle.ee.data')
+    @patch('rle_python_gee.ee_rle.ee.data')
     def test_ecosystems_functional_group_dataframe_raises_for_image(self, mock_data):
         """Test that functional_group_dataframe() raises ValueError for IMAGE assets."""
         mock_data.getAsset.return_value = {'type': 'IMAGE'}
 
-        with patch('gee_redlist.ee_rle.ee.Image'):
+        with patch('rle_python_gee.ee_rle.ee.Image'):
             ecosystem = ee_rle.Ecosystems(
                 'projects/test/assets/raster',
                 get_level3_column='EFG1',
@@ -112,8 +112,8 @@ class TestEcosystems:
 
         assert "only available for TABLE assets" in str(exc_info.value)
 
-    @patch('gee_redlist.ee_rle.ee.data')
-    @patch('gee_redlist.ee_rle.ee.FeatureCollection')
+    @patch('rle_python_gee.ee_rle.ee.data')
+    @patch('rle_python_gee.ee_rle.ee.FeatureCollection')
     def test_ecosystems_functional_group_dataframe_returns_dataframe(self, mock_fc, mock_data):
         """Test that functional_group_dataframe() returns a pandas DataFrame with MultiIndex."""
         import pandas as pd
@@ -229,7 +229,7 @@ class TestEcosystems:
 class TestMakeEOO:
     """Tests for the make_eoo function."""
 
-    @patch('gee_redlist.ee_rle.ee')
+    @patch('rle_python_gee.ee_rle.ee')
     def test_make_eoo_basic(self, mock_ee):
         """Test that make_eoo calls the correct Earth Engine methods."""
         # Create mock objects for the chain of method calls
@@ -275,7 +275,7 @@ class TestMakeEOO:
         # convexHull is called twice (workaround for GEE bug), so we check it was called with maxError=1
         mock_geometry.convexHull.assert_called_with(maxError=1)
 
-    @patch('gee_redlist.ee_rle.ee')
+    @patch('rle_python_gee.ee_rle.ee')
     def test_make_eoo_custom_parameters(self, mock_ee):
         """Test make_eoo with custom parameters."""
         mock_image = Mock()
@@ -317,7 +317,7 @@ class TestMakeEOO:
         # convexHull is called twice, check it was called with custom maxError
         mock_geometry.convexHull.assert_called_with(maxError=10)
 
-    @patch('gee_redlist.ee_rle.ee')
+    @patch('rle_python_gee.ee_rle.ee')
     def test_make_eoo_returns_geometry(self, mock_ee):
         """Test that make_eoo returns an ee.Geometry object."""
         mock_image = Mock()
@@ -345,7 +345,7 @@ class TestMakeEOO:
 class TestAreaKm2:
     """Tests for the area_km2 function."""
 
-    @patch('gee_redlist.ee_rle.ee')
+    @patch('rle_python_gee.ee_rle.ee')
     def test_area_km2_basic(self, mock_ee):
         """Test that area_km2 calculates area correctly."""
         # Create mock geometry with area
@@ -365,7 +365,7 @@ class TestAreaKm2:
         # Verify result
         assert result == mock_area_km2
 
-    @patch('gee_redlist.ee_rle.ee')
+    @patch('rle_python_gee.ee_rle.ee')
     def test_area_km2_returns_ee_number(self, mock_ee):
         """Test that area_km2 returns an ee.Number."""
         mock_geometry = Mock()
@@ -381,7 +381,7 @@ class TestAreaKm2:
 class TestEnsureAssetFolderExists:
     """Tests for the ensure_asset_folder_exists function."""
 
-    @patch('gee_redlist.ee_rle.ee.data')
+    @patch('rle_python_gee.ee_rle.ee.data')
     def test_folder_already_exists(self, mock_data):
         """Test when folder already exists."""
         # Setup: getAsset succeeds (folder exists)
@@ -397,7 +397,7 @@ class TestEnsureAssetFolderExists:
         # Verify function returns False (not created)
         assert result is False
 
-    @patch('gee_redlist.ee_rle.ee.data')
+    @patch('rle_python_gee.ee_rle.ee.data')
     def test_folder_does_not_exist(self, mock_data):
         """Test when folder doesn't exist and needs to be created."""
         # Setup: getAsset raises exception (folder doesn't exist)
@@ -414,7 +414,7 @@ class TestEnsureAssetFolderExists:
         # Verify function returns True (was created)
         assert result is True
 
-    @patch('gee_redlist.ee_rle.ee.data')
+    @patch('rle_python_gee.ee_rle.ee.data')
     def test_folder_creation_with_ecosystem_code(self, mock_data):
         """Test folder creation with realistic ecosystem folder path."""
         # Setup: folder doesn't exist
@@ -433,7 +433,7 @@ class TestEnsureAssetFolderExists:
 class TestCreateAssetFolder:
     """Tests for the create_asset_folder function."""
 
-    @patch('gee_redlist.ee_rle.ee.data')
+    @patch('rle_python_gee.ee_rle.ee.data')
     def test_create_folder_when_not_exists(self, mock_data):
         """Test folder creation when folder doesn't exist."""
         # Setup: getAsset raises exception (folder doesn't exist)
@@ -450,7 +450,7 @@ class TestCreateAssetFolder:
         # Verify function returns True (folder was created)
         assert result is True
 
-    @patch('gee_redlist.ee_rle.ee.data')
+    @patch('rle_python_gee.ee_rle.ee.data')
     def test_create_folder_when_already_exists(self, mock_data):
         """Test folder creation when folder already exists."""
         # Setup: getAsset succeeds (folder exists)
@@ -466,7 +466,7 @@ class TestCreateAssetFolder:
         # Verify function returns False (folder already existed)
         assert result is False
 
-    @patch('gee_redlist.ee_rle.ee.data')
+    @patch('rle_python_gee.ee_rle.ee.data')
     def test_create_folder_with_ecosystem_path(self, mock_data):
         """Test folder creation with realistic ecosystem folder path."""
         # Setup: folder doesn't exist
@@ -485,7 +485,7 @@ class TestCreateAssetFolder:
 class TestMakeAOO:
     """Tests for the make_aoo function."""
 
-    @patch('gee_redlist.ee_rle.ee')
+    @patch('rle_python_gee.ee_rle.ee')
     @patch('builtins.print')
     def test_make_aoo_basic(self, mock_print, mock_ee):
         """Test that make_aoo calls the correct Earth Engine methods."""
@@ -507,7 +507,7 @@ class TestMakeAOO:
         mock_size.getInfo.return_value = 42
 
         # Mock the get_aoo_grid_projection
-        with patch('gee_redlist.ee_rle.get_aoo_grid_projection') as mock_proj:
+        with patch('rle_python_gee.ee_rle.get_aoo_grid_projection') as mock_proj:
             mock_projection = Mock()
             mock_proj.return_value = mock_projection
 
@@ -535,7 +535,7 @@ class TestMakeAOO:
             # Verify print was called
             mock_print.assert_called_once_with('aoo_grid_cell_count = 42')
 
-    @patch('gee_redlist.ee_rle.ee')
+    @patch('rle_python_gee.ee_rle.ee')
     @patch('builtins.print')
     def test_make_aoo_with_different_asset_id(self, mock_print, mock_ee):
         """Test make_aoo with a different asset ID."""
@@ -545,7 +545,7 @@ class TestMakeAOO:
         mock_image.geometry.return_value.coveringGrid.return_value = Mock()
         mock_image.reduceRegions.return_value.filter.return_value.size.return_value.getInfo.return_value = 10
 
-        with patch('gee_redlist.ee_rle.get_aoo_grid_projection'):
+        with patch('rle_python_gee.ee_rle.get_aoo_grid_projection'):
             # Call with different asset ID
             ee_rle.make_aoo('projects/goog-rle-assessments/assets/MMR-T1_1_1/a00_grid')
 
@@ -555,7 +555,7 @@ class TestMakeAOO:
             # Verify print output
             mock_print.assert_called_once_with('aoo_grid_cell_count = 10')
 
-    @patch('gee_redlist.ee_rle.ee')
+    @patch('rle_python_gee.ee_rle.ee')
     @patch('builtins.print')
     def test_make_aoo_filter_gt_zero(self, mock_print, mock_ee):
         """Test that make_aoo filters cells with mean > 0."""
@@ -570,7 +570,7 @@ class TestMakeAOO:
         mock_reduced.filter.return_value = mock_filter
         mock_filter.size.return_value.getInfo.return_value = 5
 
-        with patch('gee_redlist.ee_rle.get_aoo_grid_projection'):
+        with patch('rle_python_gee.ee_rle.get_aoo_grid_projection'):
             ee_rle.make_aoo('test_asset')
 
             # Verify filter was called

@@ -1,10 +1,10 @@
 import typer
 from typing_extensions import Annotated
-from gee_redlist.ee_auth import print_authentication_status
-from gee_redlist import __version__
+from rle_python_gee.ee_auth import print_authentication_status
+from rle_python_gee import __version__
 
 app = typer.Typer(
-    name="gee-redlist-python",
+    name="rle-python-gee",
     help="Google Earth Engine tools for IUCN Red List analysis",
     add_completion=False,
 )
@@ -25,13 +25,13 @@ def main(
         typer.Option("--version", "-v", help="Show version and exit"),
     ] = False,
 ):
-    """Main entry point for gee-redlist-python CLI."""
+    """Main entry point for rle-python-gee CLI."""
     if version:
-        print(f"gee-redlist-python version {__version__}")
+        print(f"rle-python-gee version {__version__}")
         raise typer.Exit()
 
     if ctx.invoked_subcommand is None:
-        print("Hello from gee-redlist-python!")
+        print("Hello from rle-python-gee!")
         print("\nUse --help to see available commands")
 
 

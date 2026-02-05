@@ -1,1 +1,1 @@
-"""Tests for gee-redlist-python package."""
+"""Tests for rle-python-gee package."""

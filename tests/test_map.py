@@ -12,7 +12,7 @@ from io import BytesIO
 from shapely.geometry import box
 import shapely
 
-from gee_redlist.map import create_country_map, get_utm_proj_without_limits
+from rle_python_gee.map import create_country_map, get_utm_proj_without_limits
 
 
 def create_mock_wkb_for_bounds(bounds):
@@ -24,8 +24,8 @@ def create_mock_wkb_for_bounds(bounds):
 class TestCreateCountryMap:
     """Tests for the create_country_map function."""
 
-    @patch('gee_redlist.map.wkls')
-    @patch('gee_redlist.map.plt')
+    @patch('rle_python_gee.map.wkls')
+    @patch('rle_python_gee.map.plt')
     def test_basic_map_creation(self, mock_plt, mock_wkls):
         """Test basic map creation with default parameters."""
         # Setup mocks
@@ -49,8 +49,8 @@ class TestCreateCountryMap:
             mock_plt.savefig.assert_called_once()
             mock_plt.close.assert_called_once_with(mock_fig)
 
-    @patch('gee_redlist.map.wkls')
-    @patch('gee_redlist.map.plt')
+    @patch('rle_python_gee.map.wkls')
+    @patch('rle_python_gee.map.plt')
     def test_country_not_found(self, mock_plt, mock_wkls):
         """Test that ValueError is raised when country code not found in database."""
         # Mock wkls to raise ValueError when country not found
@@ -104,8 +104,8 @@ class TestCreateCountryMap:
         with pytest.raises(ValueError, match="must be a 2-letter ISO 3166-1 alpha-2 code"):
             create_country_map('U$')
 
-    @patch('gee_redlist.map.wkls')
-    @patch('gee_redlist.map.plt')
+    @patch('rle_python_gee.map.wkls')
+    @patch('rle_python_gee.map.plt')
     def test_valid_lowercase_code(self, mock_plt, mock_wkls):
         """Test that lowercase ISO codes are accepted and converted."""
         # Setup mocks
@@ -123,8 +123,8 @@ class TestCreateCountryMap:
             result = create_country_map('sg', output_path)
             assert result == output_path
 
-    @patch('gee_redlist.map.wkls')
-    @patch('gee_redlist.map.plt')
+    @patch('rle_python_gee.map.wkls')
+    @patch('rle_python_gee.map.plt')
     def test_valid_uppercase_code(self, mock_plt, mock_wkls):
         """Test that uppercase ISO codes are accepted."""
         # Setup mocks
@@ -142,8 +142,8 @@ class TestCreateCountryMap:
             result = create_country_map('SG', output_path)
             assert result == output_path
 
-    @patch('gee_redlist.map.wkls')
-    @patch('gee_redlist.map.plt')
+    @patch('rle_python_gee.map.wkls')
+    @patch('rle_python_gee.map.plt')
     def test_default_output_path(self, mock_plt, mock_wkls):
         """Test that default output path is generated correctly."""
         # Setup mocks
@@ -161,8 +161,8 @@ class TestCreateCountryMap:
         # Should generate 'nz.png'
         assert result == 'nz.png'
 
-    @patch('gee_redlist.map.wkls')
-    @patch('gee_redlist.map.plt')
+    @patch('rle_python_gee.map.wkls')
+    @patch('rle_python_gee.map.plt')
     def test_custom_colors(self, mock_plt, mock_wkls):
         """Test map creation with custom fill and edge colors."""
         # Setup mocks
@@ -195,8 +195,8 @@ class TestCreateCountryMap:
             assert call_kwargs['edgecolor'] == 'darkred'
             assert call_kwargs['linewidth'] == 2.5
 
-    @patch('gee_redlist.map.wkls')
-    @patch('gee_redlist.map.plt')
+    @patch('rle_python_gee.map.wkls')
+    @patch('rle_python_gee.map.plt')
     def test_no_border(self, mock_plt, mock_wkls):
         """Test map creation with show_border=False."""
         # Setup mocks
@@ -225,8 +225,8 @@ class TestCreateCountryMap:
             # Verify add_geometries was called
             mock_ax.add_geometries.assert_not_called()
 
-    @patch('gee_redlist.map.wkls')
-    @patch('gee_redlist.map.plt')
+    @patch('rle_python_gee.map.wkls')
+    @patch('rle_python_gee.map.plt')
     def test_spines_hidden(self, mock_plt, mock_wkls):
         """Test that plot frame spines are hidden."""
         # Setup mocks
@@ -248,8 +248,8 @@ class TestCreateCountryMap:
             for spine in mock_ax.spines.values():
                 spine.set_visible.assert_called_once_with(False)
 
-    @patch('gee_redlist.map.wkls')
-    @patch('gee_redlist.map.plt')
+    @patch('rle_python_gee.map.wkls')
+    @patch('rle_python_gee.map.plt')
     def test_custom_title(self, mock_plt, mock_wkls):
         """Test map creation with custom title."""
         # Setup mocks
@@ -270,8 +270,8 @@ class TestCreateCountryMap:
             # Verify title was set
             mock_plt.title.assert_called_once_with('Kenya Wildlife', fontsize=16, fontweight='bold')
 
-    @patch('gee_redlist.map.wkls')
-    @patch('gee_redlist.map.plt')
+    @patch('rle_python_gee.map.wkls')
+    @patch('rle_python_gee.map.plt')
     def test_no_title(self, mock_plt, mock_wkls):
         """Test map creation with empty title."""
         # Setup mocks
@@ -296,9 +296,9 @@ class TestCreateCountryMap:
 class TestEarthEngineBasemap:
     """Tests for Earth Engine basemap functionality."""
 
-    @patch('gee_redlist.map.wkls')
-    @patch('gee_redlist.map.requests.get')
-    @patch('gee_redlist.map.plt')
+    @patch('rle_python_gee.map.wkls')
+    @patch('rle_python_gee.map.requests.get')
+    @patch('rle_python_gee.map.plt')
     def test_ee_image_basemap(self, mock_plt, mock_requests, mock_wkls):
         """Test map creation with Earth Engine image basemap."""
         # Setup mocks
@@ -332,7 +332,7 @@ class TestEarthEngineBasemap:
             mock_mask.getDownloadURL.return_value = 'http://example.com/mask.png'
             mock_ee_image.mask.return_value = mock_mask
 
-            with patch('gee_redlist.map.ee') as mock_ee:
+            with patch('rle_python_gee.map.ee') as mock_ee:
                 # Mock ee.Projection and ee.Geometry.Rectangle
                 mock_ee.Projection.return_value = Mock()
                 mock_ee.Geometry.Rectangle.return_value = Mock()
@@ -352,9 +352,9 @@ class TestEarthEngineBasemap:
                 # Verify imshow was called to display the basemap
                 mock_ax.imshow.assert_called_once()
 
-    @patch('gee_redlist.map.wkls')
-    @patch('gee_redlist.map.requests.get')
-    @patch('gee_redlist.map.plt')
+    @patch('rle_python_gee.map.wkls')
+    @patch('rle_python_gee.map.requests.get')
+    @patch('rle_python_gee.map.plt')
     def test_ee_image_clipped(self, mock_plt, mock_requests, mock_wkls):
         """Test map creation with clipped Earth Engine image."""
         # Setup mocks
@@ -387,7 +387,7 @@ class TestEarthEngineBasemap:
             mock_clipped.getDownloadURL.return_value = 'http://example.com/image.png'
             mock_ee_image.clip.return_value = mock_clipped
 
-            with patch('gee_redlist.map.ee') as mock_ee:
+            with patch('rle_python_gee.map.ee') as mock_ee:
                 # Mock ee.Projection, ee.Geometry, and ee.Geometry.Rectangle
                 mock_ee.Projection.return_value = Mock()
                 mock_ee_geom = Mock()

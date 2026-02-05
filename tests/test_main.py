@@ -1,7 +1,7 @@
 import pytest
 from typer.testing import CliRunner
 from unittest.mock import patch
-from gee_redlist.main import app
+from rle_python_gee.main import app
 
 runner = CliRunner()
 
@@ -10,7 +10,7 @@ def test_main_no_command():
     """Test that main app prints the expected message when no command is provided."""
     result = runner.invoke(app, [])
     assert result.exit_code == 0
-    assert "Hello from gee-redlist-python!" in result.stdout
+    assert "Hello from rle-python-gee!" in result.stdout
     assert "Use --help to see available commands" in result.stdout
 
 
@@ -23,7 +23,7 @@ def test_main_help():
 
 
 
-@patch('gee_redlist.main.print_authentication_status')
+@patch('rle_python_gee.main.print_authentication_status')
 def test_test_auth_command(mock_print_auth):
     """Test that test-auth command calls print_authentication_status."""
     result = runner.invoke(app, ["test-auth"])
