@@ -11,7 +11,15 @@ except PackageNotFoundError:
 
 from rle_python_gee.ee_auth import check_authentication, is_authenticated, print_authentication_status
 from rle_python_gee.ee_rle import Ecosystems, make_eoo, area_km2
-from rle_python_gee.map import create_country_map, get_utm_epsg
+
+
+def __getattr__(name):
+    """Lazy import for map module to avoid loading wkls (and its S3 connection) at import time."""
+    if name in ("create_country_map", "get_utm_epsg"):
+        from rle_python_gee import map as _map
+        return getattr(_map, name)
+    raise AttributeError(f"module 'rle_python_gee' has no attribute {name!r}")
+
 
 __all__ = [
     "__version__",

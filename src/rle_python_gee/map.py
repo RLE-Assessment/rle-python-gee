@@ -13,7 +13,6 @@ import requests
 from rasterio.io import MemoryFile
 import shapely
 from shapely.ops import transform as shapely_transform
-import wkls
 
 
 def get_utm_epsg(lon: float, lat: float) -> int:
@@ -183,6 +182,9 @@ def create_country_map(
 
     if output_path is None:
         output_path = f"{country_code.lower()}.png"
+
+    # Import wkls lazily to avoid S3 connection at module import time
+    import wkls
 
     # Use wkls to obtain the country boundary information by ISO 3166-1 alpha-2 code
     try:
