@@ -1,7 +1,35 @@
 """Earth Engine authentication utilities."""
 
+import os
+import subprocess
+
 import ee
 from google.auth import default
+
+
+def _ensure_adc_env():
+    """Set GOOGLE_APPLICATION_CREDENTIALS if the gcloud ADC file exists outside the well-known location.
+
+    In Cloud Shell, ``gcloud auth application-default login`` saves
+    credentials to a temp directory that ``google.auth.default()`` does
+    not check.  This helper locates the file via ``gcloud info`` and
+    sets the environment variable so the credentials are found.
+    """
+    if os.environ.get('GOOGLE_APPLICATION_CREDENTIALS'):
+        return
+    try:
+        result = subprocess.run(
+            ['gcloud', 'info', '--format=value(config.paths.global_config_dir)'],
+            capture_output=True, text=True,
+        )
+        if result.returncode == 0:
+            adc_path = os.path.join(
+                result.stdout.strip(), 'application_default_credentials.json',
+            )
+            if os.path.exists(adc_path):
+                os.environ['GOOGLE_APPLICATION_CREDENTIALS'] = adc_path
+    except FileNotFoundError:
+        pass  # gcloud not installed
 
 
 def initialize_ee(project: str):
@@ -13,6 +41,7 @@ def initialize_ee(project: str):
     Returns:
         None
     """
+    _ensure_adc_env()
     credentials, _ = default(scopes=[
         'https://www.googleapis.com/auth/earthengine',
         'https://www.googleapis.com/auth/cloud-platform'
