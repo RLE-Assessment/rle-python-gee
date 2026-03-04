@@ -24,13 +24,18 @@ def create_mock_wkb_for_bounds(bounds):
 class TestCreateCountryMap:
     """Tests for the create_country_map function."""
 
-    @patch('rle_python_gee.map.wkls')
+    @pytest.fixture(autouse=True)
+    def _mock_wkls(self):
+        self.mock_wkls = MagicMock()
+        with patch.dict(sys.modules, {'wkls': self.mock_wkls}):
+            yield
+
     @patch('rle_python_gee.map.plt')
-    def test_basic_map_creation(self, mock_plt, mock_wkls):
+    def test_basic_map_creation(self, mock_plt):
         """Test basic map creation with default parameters."""
         # Setup mocks
         bounds = (103.6, 1.2, 104.0, 1.5)
-        mock_wkls.__getitem__.return_value.wkb.return_value = create_mock_wkb_for_bounds(bounds)
+        self.mock_wkls.__getitem__.return_value.wkb.return_value = create_mock_wkb_for_bounds(bounds)
 
         mock_fig = Mock()
         mock_ax = Mock()
@@ -49,12 +54,11 @@ class TestCreateCountryMap:
             mock_plt.savefig.assert_called_once()
             mock_plt.close.assert_called_once_with(mock_fig)
 
-    @patch('rle_python_gee.map.wkls')
     @patch('rle_python_gee.map.plt')
-    def test_country_not_found(self, mock_plt, mock_wkls):
+    def test_country_not_found(self, mock_plt):
         """Test that ValueError is raised when country code not found in database."""
         # Mock wkls to raise ValueError when country not found
-        mock_wkls.__getitem__.return_value.wkb.side_effect = ValueError("No result found for: zz")
+        self.mock_wkls.__getitem__.return_value.wkb.side_effect = ValueError("No result found for: zz")
 
         with pytest.raises(ValueError, match="Country code 'ZZ' not found in database"):
             create_country_map('ZZ')
@@ -104,13 +108,12 @@ class TestCreateCountryMap:
         with pytest.raises(ValueError, match="must be a 2-letter ISO 3166-1 alpha-2 code"):
             create_country_map('U$')
 
-    @patch('rle_python_gee.map.wkls')
     @patch('rle_python_gee.map.plt')
-    def test_valid_lowercase_code(self, mock_plt, mock_wkls):
+    def test_valid_lowercase_code(self, mock_plt):
         """Test that lowercase ISO codes are accepted and converted."""
         # Setup mocks
         bounds = (103.6, 1.2, 104.0, 1.5)
-        mock_wkls.__getitem__.return_value.wkb.return_value = create_mock_wkb_for_bounds(bounds)
+        self.mock_wkls.__getitem__.return_value.wkb.return_value = create_mock_wkb_for_bounds(bounds)
 
         mock_fig = Mock()
         mock_ax = Mock()
@@ -123,13 +126,12 @@ class TestCreateCountryMap:
             result = create_country_map('sg', output_path)
             assert result == output_path
 
-    @patch('rle_python_gee.map.wkls')
     @patch('rle_python_gee.map.plt')
-    def test_valid_uppercase_code(self, mock_plt, mock_wkls):
+    def test_valid_uppercase_code(self, mock_plt):
         """Test that uppercase ISO codes are accepted."""
         # Setup mocks
         bounds = (103.6, 1.2, 104.0, 1.5)
-        mock_wkls.__getitem__.return_value.wkb.return_value = create_mock_wkb_for_bounds(bounds)
+        self.mock_wkls.__getitem__.return_value.wkb.return_value = create_mock_wkb_for_bounds(bounds)
 
         mock_fig = Mock()
         mock_ax = Mock()
@@ -142,13 +144,12 @@ class TestCreateCountryMap:
             result = create_country_map('SG', output_path)
             assert result == output_path
 
-    @patch('rle_python_gee.map.wkls')
     @patch('rle_python_gee.map.plt')
-    def test_default_output_path(self, mock_plt, mock_wkls):
+    def test_default_output_path(self, mock_plt):
         """Test that default output path is generated correctly."""
         # Setup mocks
         bounds = (166.0, -47.0, 179.0, -34.0)
-        mock_wkls.__getitem__.return_value.wkb.return_value = create_mock_wkb_for_bounds(bounds)
+        self.mock_wkls.__getitem__.return_value.wkb.return_value = create_mock_wkb_for_bounds(bounds)
 
         mock_fig = Mock()
         mock_ax = Mock()
@@ -161,13 +162,12 @@ class TestCreateCountryMap:
         # Should generate 'nz.png'
         assert result == 'nz.png'
 
-    @patch('rle_python_gee.map.wkls')
     @patch('rle_python_gee.map.plt')
-    def test_custom_colors(self, mock_plt, mock_wkls):
+    def test_custom_colors(self, mock_plt):
         """Test map creation with custom fill and edge colors."""
         # Setup mocks
         bounds = (129.0, 31.0, 146.0, 46.0)
-        mock_wkls.__getitem__.return_value.wkb.return_value = create_mock_wkb_for_bounds(bounds)
+        self.mock_wkls.__getitem__.return_value.wkb.return_value = create_mock_wkb_for_bounds(bounds)
 
         mock_fig = Mock()
         mock_ax = Mock()
@@ -195,13 +195,12 @@ class TestCreateCountryMap:
             assert call_kwargs['edgecolor'] == 'darkred'
             assert call_kwargs['linewidth'] == 2.5
 
-    @patch('rle_python_gee.map.wkls')
     @patch('rle_python_gee.map.plt')
-    def test_no_border(self, mock_plt, mock_wkls):
+    def test_no_border(self, mock_plt):
         """Test map creation with show_border=False."""
         # Setup mocks
         bounds = (-74.0, -34.0, -34.0, 5.0)
-        mock_wkls.__getitem__.return_value.wkb.return_value = create_mock_wkb_for_bounds(bounds)
+        self.mock_wkls.__getitem__.return_value.wkb.return_value = create_mock_wkb_for_bounds(bounds)
 
         mock_fig = Mock()
         mock_ax = Mock()
@@ -225,13 +224,12 @@ class TestCreateCountryMap:
             # Verify add_geometries was called
             mock_ax.add_geometries.assert_not_called()
 
-    @patch('rle_python_gee.map.wkls')
     @patch('rle_python_gee.map.plt')
-    def test_spines_hidden(self, mock_plt, mock_wkls):
+    def test_spines_hidden(self, mock_plt):
         """Test that plot frame spines are hidden."""
         # Setup mocks
         bounds = (-5.0, 41.0, 10.0, 51.0)
-        mock_wkls.__getitem__.return_value.wkb.return_value = create_mock_wkb_for_bounds(bounds)
+        self.mock_wkls.__getitem__.return_value.wkb.return_value = create_mock_wkb_for_bounds(bounds)
 
         mock_fig = Mock()
         mock_ax = Mock()
@@ -248,13 +246,12 @@ class TestCreateCountryMap:
             for spine in mock_ax.spines.values():
                 spine.set_visible.assert_called_once_with(False)
 
-    @patch('rle_python_gee.map.wkls')
     @patch('rle_python_gee.map.plt')
-    def test_custom_title(self, mock_plt, mock_wkls):
+    def test_custom_title(self, mock_plt):
         """Test map creation with custom title."""
         # Setup mocks
         bounds = (33.9, -4.7, 41.9, 4.6)
-        mock_wkls.__getitem__.return_value.wkb.return_value = create_mock_wkb_for_bounds(bounds)
+        self.mock_wkls.__getitem__.return_value.wkb.return_value = create_mock_wkb_for_bounds(bounds)
 
         mock_fig = Mock()
         mock_ax = Mock()
@@ -270,13 +267,12 @@ class TestCreateCountryMap:
             # Verify title was set
             mock_plt.title.assert_called_once_with('Kenya Wildlife', fontsize=16, fontweight='bold')
 
-    @patch('rle_python_gee.map.wkls')
     @patch('rle_python_gee.map.plt')
-    def test_no_title(self, mock_plt, mock_wkls):
+    def test_no_title(self, mock_plt):
         """Test map creation with empty title."""
         # Setup mocks
         bounds = (-24.5, 63.3, -13.5, 66.5)
-        mock_wkls.__getitem__.return_value.wkb.return_value = create_mock_wkb_for_bounds(bounds)
+        self.mock_wkls.__getitem__.return_value.wkb.return_value = create_mock_wkb_for_bounds(bounds)
 
         mock_fig = Mock()
         mock_ax = Mock()
@@ -296,14 +292,19 @@ class TestCreateCountryMap:
 class TestEarthEngineBasemap:
     """Tests for Earth Engine basemap functionality."""
 
-    @patch('rle_python_gee.map.wkls')
+    @pytest.fixture(autouse=True)
+    def _mock_wkls(self):
+        self.mock_wkls = MagicMock()
+        with patch.dict(sys.modules, {'wkls': self.mock_wkls}):
+            yield
+
     @patch('rle_python_gee.map.requests.get')
     @patch('rle_python_gee.map.plt')
-    def test_ee_image_basemap(self, mock_plt, mock_requests, mock_wkls):
+    def test_ee_image_basemap(self, mock_plt, mock_requests):
         """Test map creation with Earth Engine image basemap."""
         # Setup mocks
         bounds = (80.0, 26.3, 88.2, 30.4)
-        mock_wkls.__getitem__.return_value.wkb.return_value = create_mock_wkb_for_bounds(bounds)
+        self.mock_wkls.__getitem__.return_value.wkb.return_value = create_mock_wkb_for_bounds(bounds)
 
         mock_fig = Mock()
         mock_ax = Mock()
@@ -352,14 +353,13 @@ class TestEarthEngineBasemap:
                 # Verify imshow was called to display the basemap
                 mock_ax.imshow.assert_called_once()
 
-    @patch('rle_python_gee.map.wkls')
     @patch('rle_python_gee.map.requests.get')
     @patch('rle_python_gee.map.plt')
-    def test_ee_image_clipped(self, mock_plt, mock_requests, mock_wkls):
+    def test_ee_image_clipped(self, mock_plt, mock_requests):
         """Test map creation with clipped Earth Engine image."""
         # Setup mocks
         bounds = (-81.4, -18.3, -68.7, -0.0)
-        mock_wkls.__getitem__.return_value.wkb.return_value = create_mock_wkb_for_bounds(bounds)
+        self.mock_wkls.__getitem__.return_value.wkb.return_value = create_mock_wkb_for_bounds(bounds)
 
         mock_fig = Mock()
         mock_ax = Mock()
