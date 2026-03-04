@@ -53,8 +53,8 @@ class Ecosystems:
     def __init__(
         self,
         data: Union[str, ee.FeatureCollection, ee.Image],
-        get_level3_column: Optional[str],
-        get_level456_column: Optional[str]
+        get_level3_column: Optional[str] = None,
+        get_level456_column: Optional[str] = None
     ):
         """
         Initialize an Ecosystems instance.
