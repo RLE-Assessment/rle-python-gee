@@ -96,21 +96,16 @@ class TestEcosystems:
         assert ecosystem.asset_id == asset_id
 
     @patch('rle_python_gee.ee_rle.ee.data')
-    def test_ecosystems_functional_group_dataframe_raises_for_image(self, mock_data):
-        """Test that functional_group_dataframe() raises ValueError for IMAGE assets."""
+    def test_ecosystems_raster_has_no_functional_group_dataframe(self, mock_data):
+        """Test that EcosystemsRaster does not have functional_group_dataframe()."""
         mock_data.getAsset.return_value = {'type': 'IMAGE'}
 
         with patch('rle_python_gee.ee_rle.ee.Image'):
             ecosystem = ee_rle.Ecosystems(
                 'projects/test/assets/raster',
-                get_level3_column='EFG1',
-                get_level456_column='COD'
             )
 
-        with pytest.raises(ValueError) as exc_info:
-            _ = ecosystem.functional_group_dataframe()
-
-        assert "only available for TABLE assets" in str(exc_info.value)
+        assert not hasattr(ecosystem, 'functional_group_dataframe')
 
     @patch('rle_python_gee.ee_rle.ee.data')
     @patch('rle_python_gee.ee_rle.ee.FeatureCollection')
@@ -223,6 +218,61 @@ class TestEcosystems:
             )
 
         assert "Unsupported data type 'Geometry'" in str(exc_info.value)
+
+    @patch('rle_python_gee.ee_rle.ee.data')
+    @patch('rle_python_gee.ee_rle.ee.FeatureCollection')
+    def test_factory_returns_vector_subclass(self, mock_fc, mock_data):
+        """Test that Ecosystems factory returns EcosystemsVector for TABLE assets."""
+        mock_data.getAsset.return_value = {'type': 'TABLE'}
+
+        ecosystem = ee_rle.Ecosystems(
+            'projects/test/assets/vector_asset',
+            get_level3_column='EFG1',
+            get_level456_column='COD'
+        )
+
+        assert isinstance(ecosystem, ee_rle.EcosystemsVector)
+        assert isinstance(ecosystem, ee_rle.Ecosystems)
+        assert ecosystem.get_level3_column == 'EFG1'
+        assert ecosystem.get_level456_column == 'COD'
+
+    @patch('rle_python_gee.ee_rle.ee.data')
+    @patch('rle_python_gee.ee_rle.ee.Image')
+    def test_factory_returns_raster_subclass(self, mock_image, mock_data):
+        """Test that Ecosystems factory returns EcosystemsRaster for IMAGE assets."""
+        mock_data.getAsset.return_value = {'type': 'IMAGE'}
+
+        ecosystem = ee_rle.Ecosystems('projects/test/assets/raster_asset')
+
+        assert isinstance(ecosystem, ee_rle.EcosystemsRaster)
+        assert isinstance(ecosystem, ee_rle.Ecosystems)
+
+    def test_vector_subclass_direct_instantiation(self):
+        """Test that EcosystemsVector can be instantiated directly."""
+        mock_fc = Mock()
+        mock_fc.name.return_value = 'FeatureCollection'
+
+        ecosystem = ee_rle.EcosystemsVector(
+            mock_fc,
+            get_level3_column='EFG1',
+            get_level456_column='COD'
+        )
+
+        assert isinstance(ecosystem, ee_rle.EcosystemsVector)
+        assert isinstance(ecosystem, ee_rle.Ecosystems)
+        assert ecosystem.asset_type == 'TABLE'
+        assert ecosystem.get_level3_column == 'EFG1'
+
+    def test_raster_subclass_direct_instantiation(self):
+        """Test that EcosystemsRaster can be instantiated directly."""
+        mock_image = Mock()
+        mock_image.name.return_value = 'Image'
+
+        ecosystem = ee_rle.EcosystemsRaster(mock_image)
+
+        assert isinstance(ecosystem, ee_rle.EcosystemsRaster)
+        assert isinstance(ecosystem, ee_rle.Ecosystems)
+        assert ecosystem.asset_type == 'IMAGE'
 
 
 @pytest.mark.unit

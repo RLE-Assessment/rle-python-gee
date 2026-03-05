@@ -18,6 +18,43 @@ def load_yaml(yaml_path):
         return yaml.safe_load(f)
 
 
+def _resolve_data(data):
+    """Resolve data argument to (asset_id, asset_type, ee_data).
+
+    Args:
+        data: Earth Engine asset ID string, ee.FeatureCollection, or ee.Image.
+
+    Returns:
+        Tuple of (asset_id, asset_type, ee_data).
+
+    Raises:
+        ValueError: If the data type is not supported.
+    """
+    if isinstance(data, str):
+        asset_info = ee.data.getAsset(data)
+        asset_type = asset_info['type']
+        if asset_type == 'TABLE':
+            return data, asset_type, ee.FeatureCollection(data)
+        elif asset_type == 'IMAGE':
+            return data, asset_type, ee.Image(data)
+        else:
+            raise ValueError(
+                f"Unsupported asset type '{asset_type}' for asset '{data}'. "
+                "Expected 'TABLE' (FeatureCollection) or 'IMAGE'."
+            )
+    else:
+        type_name = data.name()
+        if type_name == 'FeatureCollection':
+            return None, 'TABLE', data
+        elif type_name == 'Image':
+            return None, 'IMAGE', data
+        else:
+            raise ValueError(
+                f"Unsupported data type '{type_name}'. "
+                "Expected ee.FeatureCollection or ee.Image."
+            )
+
+
 class Ecosystems:
     """
     Represents an ecosystems dataset from Google Earth Engine.
@@ -26,96 +63,99 @@ class Ecosystems:
     or ee.Image containing ecosystem data, typically mapped to IUCN Global
     Ecosystem Typology (GET) functional groups.
 
+    When called directly, acts as a factory that returns an EcosystemsVector
+    or EcosystemsRaster instance based on the detected data type.
+
     Attributes:
         asset_id: The Earth Engine asset ID (None if created from EE object directly).
         asset_type: The type of data ('TABLE' for vector, 'IMAGE' for raster).
         data: The ee.FeatureCollection or ee.Image containing ecosystem data.
-        get_level3_column: Column name for GET Level 3 ecosystem functional group codes.
-        get_level456_column: Column name for GET Level 4 ecosystem type codes.
 
     Example:
         >>> import ee
         >>> ee.Initialize()
-        >>> # Load from asset ID
+        >>> # Load from asset ID - returns EcosystemsVector or EcosystemsRaster
         >>> vec_ecosystems = Ecosystems(
-        ...     'projects/goog-rle-assessments/assets/columbia/GETCol'
+        ...     'projects/goog-rle-assessments/assets/columbia/GETCol',
+        ...     get_level3_column='EFG1',
+        ...     get_level456_column='Glob_Typol'
         ... )
-        >>> print(vec_ecosystems.asset_type)
-        'TABLE'
-        >>> # Load from ee.FeatureCollection directly
-        >>> fc = ee.FeatureCollection([...])
-        >>> ecosystems = Ecosystems(fc)
-        >>> # Load from ee.Image directly
-        >>> img = ee.Image('projects/goog-rle-assessments/assets/mm_ecosys_v7b')
-        >>> raster_ecosystems = Ecosystems(img)
+        >>> print(type(vec_ecosystems).__name__)
+        'EcosystemsVector'
     """
 
-    def __init__(
-        self,
-        data: Union[str, ee.FeatureCollection, ee.Image],
-        get_level3_column: Optional[str] = None,
-        get_level456_column: Optional[str] = None
-    ):
+    def __new__(cls, data, **kwargs):
+        if cls is not Ecosystems:
+            return super().__new__(cls)
+
+        resolved = _resolve_data(data)
+        asset_type = resolved[1]
+
+        if asset_type == 'TABLE':
+            instance = super().__new__(EcosystemsVector)
+        elif asset_type == 'IMAGE':
+            instance = super().__new__(EcosystemsRaster)
+        else:
+            raise ValueError(f"Unsupported asset type: {asset_type}")
+
+        instance._resolved = resolved
+        return instance
+
+    def __init__(self, data, **kwargs):
+        if hasattr(self, '_resolved'):
+            self.asset_id, self.asset_type, self.data = self._resolved
+            del self._resolved
+        else:
+            self.asset_id, self.asset_type, self.data = _resolve_data(data)
+
+    def _data_repr_html_(self, meta_rows):
+        """Return type-specific HTML content. Subclasses override this."""
+        return ""
+
+    def _repr_html_(self) -> str:
+        """Return HTML representation for Jupyter notebook display."""
+        meta_rows = []
+        if self.asset_id:
+            meta_rows.append(f"<tr><td><b>Asset ID</b></td><td>{self.asset_id}</td></tr>")
+        meta_rows.append(f"<tr><td><b>Asset Type</b></td><td>{self.asset_type}</td></tr>")
+
+        data_table = self._data_repr_html_(meta_rows)
+
+        return f"""
+        <table style="border-collapse: collapse;">
+            <thead>
+                <tr><th colspan="2" style="text-align: left; padding: 8px; background-color: #f0f0f0;">Ecosystems</th></tr>
+            </thead>
+            <tbody>
+                {''.join(meta_rows)}
+            </tbody>
+        </table>
+        {data_table}
         """
-        Initialize an Ecosystems instance.
 
-        Accepts an Earth Engine asset ID string, ee.FeatureCollection, or ee.Image.
-        Automatically detects the data type and loads appropriately.
 
-        Args:
-            data: One of:
-                - Earth Engine asset ID string (e.g., 'projects/.../assets/...')
-                - ee.FeatureCollection object
-                - ee.Image object
-            get_level3_column: Column name containing GET (Global Ecosystem Typology)
-                               Level 3 ecosystem functional group codes (e.g., 'EFG1').
-            get_level456_column: Column name containing GET (Global Ecosystem Typology)
-                               Level 4 ecosystem type codes (e.g., 'Glob_Typol').
+class EcosystemsVector(Ecosystems):
+    """
+    Represents a vector ecosystems dataset (ee.FeatureCollection).
 
-        Raises:
-            ee.EEException: If asset_id doesn't exist or access is denied.
-            ValueError: If the data type is not supported.
-        """
+    Attributes:
+        asset_id: The Earth Engine asset ID (None if created from EE object directly).
+        asset_type: Always 'TABLE'.
+        data: The ee.FeatureCollection containing ecosystem data.
+        get_level3_column: Column name for GET Level 3 ecosystem functional group codes.
+        get_level456_column: Column name for GET Level 4 ecosystem type codes.
+    """
+
+    def __init__(self, data, get_level3_column=None, get_level456_column=None, **kwargs):
+        super().__init__(data, **kwargs)
         self.get_level3_column = get_level3_column
         self.get_level456_column = get_level456_column
-
-        if isinstance(data, str):
-            # Treat as asset_id
-            self.asset_id = data
-            asset_info = ee.data.getAsset(data)
-            self.asset_type = asset_info['type']
-
-            if self.asset_type == 'TABLE':
-                self.data = ee.FeatureCollection(data)
-            elif self.asset_type == 'IMAGE':
-                self.data = ee.Image(data)
-            else:
-                raise ValueError(
-                    f"Unsupported asset type '{self.asset_type}' for asset '{data}'. "
-                    "Expected 'TABLE' (FeatureCollection) or 'IMAGE'."
-                )
-        else:
-            # Treat as EE object
-            self.asset_id = None
-            type_name = data.name()
-
-            if type_name == 'FeatureCollection':
-                self.asset_type = 'TABLE'
-            elif type_name == 'Image':
-                self.asset_type = 'IMAGE'
-            else:
-                raise ValueError(
-                    f"Unsupported data type '{type_name}'. "
-                    "Expected ee.FeatureCollection or ee.Image."
-                )
-            self.data = data
 
     def functional_group_dataframe(self) -> pd.DataFrame:
         """Return functional groups as a pandas DataFrame with MultiIndex.
 
-        Only available for TABLE (vector) assets. Returns a DataFrame with
-        distinct combinations of GET Level 3 and Level 4 columns, using them
-        as a hierarchical MultiIndex.
+        Returns a DataFrame with distinct combinations of GET Level 3 and
+        Level 4 columns, using them as a hierarchical MultiIndex.
 
         Uses Earth Engine server-side grouped reduction for efficiency.
 
@@ -123,11 +163,8 @@ class Ecosystems:
             pd.DataFrame: DataFrame with MultiIndex (get_level3_column, get_level456_column).
 
         Raises:
-            ValueError: If the asset type is not TABLE or if column names are not specified.
+            ValueError: If column names are not specified.
         """
-        if self.asset_type != 'TABLE':
-            raise ValueError("dataframe property is only available for TABLE assets")
-
         if self.get_level3_column is None or self.get_level456_column is None:
             raise ValueError(
                 "Both get_level3_column and get_level456_column must be specified "
@@ -154,81 +191,79 @@ class Ecosystems:
         df = pd.DataFrame(records)
         return df.set_index([self.get_level3_column, self.get_level456_column])
 
-    def _repr_html_(self) -> str:
-        """Return HTML representation for Jupyter notebook display."""
-        meta_rows = []
-        if self.asset_id:
-            meta_rows.append(f"<tr><td><b>Asset ID</b></td><td>{self.asset_id}</td></tr>")
-        meta_rows.append(f"<tr><td><b>Asset Type</b></td><td>{self.asset_type}</td></tr>")
-
+    def _data_repr_html_(self, meta_rows):
+        """Return vector-specific HTML content."""
         if self.get_level3_column:
             meta_rows.append(f"<tr><td><b>GET Level 3 Column</b></td><td>{self.get_level3_column}</td></tr>")
         if self.get_level456_column:
             meta_rows.append(f"<tr><td><b>GET Level 4 Column</b></td><td>{self.get_level456_column}</td></tr>")
 
-        data_table = ""
+        count = self.data.size().getInfo()
+        meta_rows.append(f"<tr><td><b>Feature Count</b></td><td>{count}</td></tr>")
 
-        if self.asset_type == 'TABLE':
-            count = self.data.size().getInfo()
-            meta_rows.append(f"<tr><td><b>Feature Count</b></td><td>{count}</td></tr>")
+        # Get first 5 features for preview
+        head_features = self.data.limit(5).getInfo()['features']
 
-            # Get first 5 features for preview
-            head_features = self.data.limit(5).getInfo()['features']
+        if not head_features:
+            return ""
 
-            if head_features:
-                # Get property names from first feature
-                props = list(head_features[0].get('properties', {}).keys())
-                if props:
-                    # Build header row with highlight for GET columns
-                    header_cells = []
-                    for p in props:
-                        if p == self.get_level3_column:
-                            header_cells.append(f'<th style="padding: 4px 8px; border: 1px solid #ddd; background-color: #cce5ff; font-weight: bold;">{p}</th>')
-                        elif p == self.get_level456_column:
-                            header_cells.append(f'<th style="padding: 4px 8px; border: 1px solid #ddd; background-color: #d4edda; font-weight: bold;">{p}</th>')
-                        else:
-                            header_cells.append(f'<th style="padding: 4px 8px; border: 1px solid #ddd; background-color: #f5f5f5;">{p}</th>')
-                    header_row = f'<tr>{"".join(header_cells)}</tr>'
+        # Get property names from first feature
+        props = list(head_features[0].get('properties', {}).keys())
+        if not props:
+            return ""
 
-                    # Build data rows (first 5 only) with highlight for GET columns
-                    data_rows = []
-                    for feature in head_features:
-                        prop_values = feature.get('properties', {})
-                        cells = []
-                        for p in props:
-                            if p == self.get_level3_column:
-                                cells.append(f'<td style="padding: 4px 8px; border: 1px solid #ddd; background-color: #cce5ff;">{prop_values.get(p, "")}</td>')
-                            elif p == self.get_level456_column:
-                                cells.append(f'<td style="padding: 4px 8px; border: 1px solid #ddd; background-color: #d4edda;">{prop_values.get(p, "")}</td>')
-                            else:
-                                cells.append(f'<td style="padding: 4px 8px; border: 1px solid #ddd;">{prop_values.get(p, "")}</td>')
-                        data_rows.append(f'<tr>{"".join(cells)}</tr>')
+        # Build header row with highlight for GET columns
+        header_cells = []
+        for p in props:
+            if p == self.get_level3_column:
+                header_cells.append(f'<th style="padding: 4px 8px; border: 1px solid #ddd; background-color: #cce5ff; font-weight: bold;">{p}</th>')
+            elif p == self.get_level456_column:
+                header_cells.append(f'<th style="padding: 4px 8px; border: 1px solid #ddd; background-color: #d4edda; font-weight: bold;">{p}</th>')
+            else:
+                header_cells.append(f'<th style="padding: 4px 8px; border: 1px solid #ddd; background-color: #f5f5f5;">{p}</th>')
+        header_row = f'<tr>{"".join(header_cells)}</tr>'
 
-                    more_text = f"<p style='color: #666; font-style: italic;'>Showing 5 of {count} records</p>" if count > 5 else ""
+        # Build data rows (first 5 only) with highlight for GET columns
+        data_rows = []
+        for feature in head_features:
+            prop_values = feature.get('properties', {})
+            cells = []
+            for p in props:
+                if p == self.get_level3_column:
+                    cells.append(f'<td style="padding: 4px 8px; border: 1px solid #ddd; background-color: #cce5ff;">{prop_values.get(p, "")}</td>')
+                elif p == self.get_level456_column:
+                    cells.append(f'<td style="padding: 4px 8px; border: 1px solid #ddd; background-color: #d4edda;">{prop_values.get(p, "")}</td>')
+                else:
+                    cells.append(f'<td style="padding: 4px 8px; border: 1px solid #ddd;">{prop_values.get(p, "")}</td>')
+            data_rows.append(f'<tr>{"".join(cells)}</tr>')
 
-                    data_table = f"""
-                    <h4 style="margin-top: 16px; margin-bottom: 8px;">Records</h4>
-                    <table style="border-collapse: collapse; margin-top: 8px;">
-                        <thead>{header_row}</thead>
-                        <tbody>{''.join(data_rows)}</tbody>
-                    </table>
-                    {more_text}
-                    """
-        elif self.asset_type == 'IMAGE':
-            bands = self.data.bandNames().getInfo()
-            meta_rows.append(f"<tr><td><b>Bands</b></td><td>{', '.join(bands)}</td></tr>")
+        more_text = f"<p style='color: #666; font-style: italic;'>Showing 5 of {count} records</p>" if count > 5 else ""
 
         return f"""
-        <table style="border-collapse: collapse;">
-            <thead>
-                <tr><th colspan="2" style="text-align: left; padding: 8px; background-color: #f0f0f0;">Ecosystems</th></tr>
-            </thead>
-            <tbody>
-                {''.join(meta_rows)}
-            </tbody>
+        <h4 style="margin-top: 16px; margin-bottom: 8px;">Records</h4>
+        <table style="border-collapse: collapse; margin-top: 8px;">
+            <thead>{header_row}</thead>
+            <tbody>{''.join(data_rows)}</tbody>
         </table>
-        {data_table}
+        {more_text}
         """
+
+
+class EcosystemsRaster(Ecosystems):
+    """
+    Represents a raster ecosystems dataset (ee.Image).
+
+    Attributes:
+        asset_id: The Earth Engine asset ID (None if created from EE object directly).
+        asset_type: Always 'IMAGE'.
+        data: The ee.Image containing ecosystem data.
+    """
+
+    def _data_repr_html_(self, meta_rows):
+        """Return raster-specific HTML content."""
+        bands = self.data.bandNames().getInfo()
+        meta_rows.append(f"<tr><td><b>Bands</b></td><td>{', '.join(bands)}</td></tr>")
+        return ""
 
 
 def get_aoo_grid_projection() -> ee.Projection:

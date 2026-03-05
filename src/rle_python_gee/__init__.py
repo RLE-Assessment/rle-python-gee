@@ -10,7 +10,7 @@ except PackageNotFoundError:
     __version__ = "0.0.0.dev"
 
 from rle_python_gee.ee_auth import check_authentication, is_authenticated, print_authentication_status
-from rle_python_gee.ee_rle import Ecosystems, make_eoo, area_km2
+from rle_python_gee.ee_rle import Ecosystems, EcosystemsVector, EcosystemsRaster, make_eoo, area_km2
 
 
 def __getattr__(name):
@@ -27,6 +27,8 @@ __all__ = [
     "is_authenticated",
     "print_authentication_status",
     "Ecosystems",
+    "EcosystemsVector",
+    "EcosystemsRaster",
     "make_eoo",
     "area_km2",
     "create_country_map",
