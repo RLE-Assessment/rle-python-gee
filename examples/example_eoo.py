@@ -14,7 +14,7 @@ def main():
 
     # Create a binary habitat map
     ee_image = (
-            ee.Image('projects/goog-rle-assessments/assets/mm_ecosys_v7b')
+            ee.Image('projects/goog-rle-assessments/assets/myanmar/mm_ecosys_v7b')
             .eq(37).selfMask()
         )
 
