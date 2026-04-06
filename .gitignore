@@ -212,3 +212,4 @@ temp/
 # Generated test outputs
 tests/test_data/TEST_*
 tests/test_data/colombia_ecosystems*
+examples/tmp/
