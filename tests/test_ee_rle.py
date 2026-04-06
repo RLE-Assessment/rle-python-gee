@@ -293,7 +293,7 @@ class TestMakeAOO:
         """Test that make_aoo returns AOOGridGeoParquet for .parquet paths."""
         from rle_python_gee.aoo import AOOGridGeoParquet
 
-        result = ee_rle.make_aoo("/fake/path.parquet")
+        result = ee_rle.make_aoo("/fake/path.parquet", ecosystem_column='ECO_NAME')
         assert isinstance(result, AOOGridGeoParquet)
 
     def test_make_aoo_returns_aoo_grid_for_ee_fc(self):
@@ -303,7 +303,7 @@ class TestMakeAOO:
         mock_fc = MagicMock(spec=ee.FeatureCollection)
         result = ee_rle.make_aoo(
             mock_fc, ecosystem_column='ECO_NAME',
-            asset_path='projects/test/assets/cache',
+            gee_asset_path='projects/test/assets/cache',
         )
         assert isinstance(result, AOOGridEEFeatureCollection)
 

@@ -28,17 +28,17 @@ GEOJSON_PATH = Path(__file__).parent / "test_data" / "null_island.geojson"
 @pytest.mark.unit
 class TestEcosystemsGeoJSON:
     def test_kind(self):
-        eco = EcosystemsGeoJSON(GEOJSON_PATH)
+        eco = EcosystemsGeoJSON(GEOJSON_PATH, ecosystem_column='ECO_NAME')
         assert eco.kind == EcosystemKind.VECTOR_LOCAL
 
     def test_load_returns_geodataframe(self):
-        eco = EcosystemsGeoJSON(GEOJSON_PATH)
+        eco = EcosystemsGeoJSON(GEOJSON_PATH, ecosystem_column='ECO_NAME')
         gdf = eco.load()
         assert isinstance(gdf, gpd.GeoDataFrame)
         assert len(gdf) > 0
 
     def test_load_caches(self):
-        eco = EcosystemsGeoJSON(GEOJSON_PATH)
+        eco = EcosystemsGeoJSON(GEOJSON_PATH, ecosystem_column='ECO_NAME')
         first = eco.load()
         second = eco.load()
         assert first is second
@@ -47,7 +47,7 @@ class TestEcosystemsGeoJSON:
 @pytest.mark.unit
 class TestEcosystemsGeoParquet:
     def test_kind(self):
-        eco = EcosystemsGeoParquet("/fake/path.parquet")
+        eco = EcosystemsGeoParquet("/fake/path.parquet", ecosystem_column='ECO_NAME')
         assert eco.kind == EcosystemKind.VECTOR_LOCAL
 
 
@@ -84,11 +84,11 @@ class TestEcosystemsCOG:
 @pytest.mark.unit
 class TestEcosystemsClassmethods:
     def test_from_geojson(self):
-        eco = Ecosystems.from_geojson("/path.geojson")
+        eco = Ecosystems.from_geojson("/path.geojson", ecosystem_column='ECO_NAME')
         assert isinstance(eco, EcosystemsGeoJSON)
 
     def test_from_parquet(self):
-        eco = Ecosystems.from_parquet("/path.parquet")
+        eco = Ecosystems.from_parquet("/path.parquet", ecosystem_column='ECO_NAME')
         assert isinstance(eco, EcosystemsGeoParquet)
 
     def test_from_gee_feature_collection(self):
@@ -112,11 +112,11 @@ class TestEcosystemsClassmethods:
 @pytest.mark.unit
 class TestMakeEcosystems:
     def test_geojson_detection(self):
-        eco = make_ecosystems("/fake/path.geojson")
+        eco = make_ecosystems("/fake/path.geojson", ecosystem_column='ECO_NAME')
         assert isinstance(eco, EcosystemsGeoJSON)
 
     def test_parquet_detection(self):
-        eco = make_ecosystems("/fake/path.parquet")
+        eco = make_ecosystems("/fake/path.parquet", ecosystem_column='ECO_NAME')
         assert isinstance(eco, EcosystemsGeoParquet)
 
     def test_tif_detection(self):
@@ -142,13 +142,13 @@ class TestMakeEcosystems:
 @pytest.mark.unit
 class TestEcosystemsDisplay:
     def test_repr(self):
-        eco = EcosystemsGeoJSON("/path/to/file.geojson")
+        eco = EcosystemsGeoJSON("/path/to/file.geojson", ecosystem_column='ECO_NAME')
         r = repr(eco)
         assert "EcosystemsGeoJSON" in r
         assert "file.geojson" in r
 
     def test_repr_html(self):
-        eco = EcosystemsGeoJSON("/path/to/file.geojson")
+        eco = EcosystemsGeoJSON("/path/to/file.geojson", ecosystem_column='ECO_NAME')
         html = eco._repr_html_()
         assert "EcosystemsGeoJSON" in html
         assert "vector_local" in html
@@ -156,7 +156,7 @@ class TestEcosystemsDisplay:
     def test_to_layer_geojson(self):
         from lonboard import PolygonLayer
 
-        eco = EcosystemsGeoJSON(GEOJSON_PATH)
+        eco = EcosystemsGeoJSON(GEOJSON_PATH, ecosystem_column='ECO_NAME')
         layers = eco.to_layer()
         assert len(layers) == 1
         assert isinstance(layers[0], PolygonLayer)
@@ -164,7 +164,7 @@ class TestEcosystemsDisplay:
     def test_to_map_geojson(self):
         from lonboard import Map
 
-        eco = EcosystemsGeoJSON(GEOJSON_PATH)
+        eco = EcosystemsGeoJSON(GEOJSON_PATH, ecosystem_column='ECO_NAME')
         m = eco.to_map()
         assert isinstance(m, Map)
 
@@ -199,13 +199,13 @@ class TestEcosystemsDisplay:
 @pytest.mark.unit
 class TestEcosystemsExport:
     def test_to_geodataframe_geojson(self):
-        eco = EcosystemsGeoJSON(GEOJSON_PATH)
+        eco = EcosystemsGeoJSON(GEOJSON_PATH, ecosystem_column='ECO_NAME')
         gdf = eco.to_geodataframe()
         assert isinstance(gdf, gpd.GeoDataFrame)
         assert len(gdf) > 0
 
     def test_to_parquet(self, tmp_path):
-        eco = EcosystemsGeoJSON(GEOJSON_PATH)
+        eco = EcosystemsGeoJSON(GEOJSON_PATH, ecosystem_column='ECO_NAME')
         out = tmp_path / "output.parquet"
         eco.to_parquet(out)
         result = gpd.read_parquet(out)
@@ -213,7 +213,7 @@ class TestEcosystemsExport:
         assert result.geometry.is_valid.all()
 
     def test_to_geojson(self, tmp_path):
-        eco = EcosystemsGeoJSON(GEOJSON_PATH)
+        eco = EcosystemsGeoJSON(GEOJSON_PATH, ecosystem_column='ECO_NAME')
         out = tmp_path / "output.geojson"
         eco.to_geojson(out)
         result = gpd.read_file(out)
@@ -241,7 +241,7 @@ class TestEcosystemsExport:
 
         with patch("ee.FeatureCollection") as mock_fc_cls, \
              patch("ee.batch.Export.table.toAsset", return_value=mock_task):
-            eco = EcosystemsGeoJSON(GEOJSON_PATH)
+            eco = EcosystemsGeoJSON(GEOJSON_PATH, ecosystem_column='ECO_NAME')
             task = eco.to_ee_feature_collection("projects/test/assets/output")
             assert task is mock_task
             mock_task.start.assert_called_once()

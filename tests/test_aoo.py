@@ -141,11 +141,11 @@ class TestMakeAooFactory:
     """Tests for the make_aoo factory function."""
 
     def test_parquet_detection(self):
-        aoo = make_aoo("/fake/path.parquet")
+        aoo = make_aoo("/fake/path.parquet", ecosystem_column='ECO_NAME')
         assert isinstance(aoo, AOOGridVectorLocal)
 
     def test_geojson_detection(self):
-        aoo = make_aoo("/fake/path.geojson")
+        aoo = make_aoo("/fake/path.geojson", ecosystem_column='ECO_NAME')
         assert isinstance(aoo, AOOGridVectorLocal)
 
     def test_tif_detection(self):
@@ -167,7 +167,7 @@ class TestMakeAooFactory:
 
     def test_ecosystems_instance(self):
         """make_aoo should accept an Ecosystems instance directly."""
-        eco = EcosystemsGeoJSON("/fake/path.geojson")
+        eco = EcosystemsGeoJSON("/fake/path.geojson", ecosystem_column='ECO_NAME')
         aoo = make_aoo(eco)
         assert isinstance(aoo, AOOGridVectorLocal)
 
@@ -182,11 +182,11 @@ class TestAOOGridClassmethods:
     """Tests for AOOGrid.from_*() classmethods."""
 
     def test_from_parquet(self):
-        aoo = AOOGrid.from_parquet("/fake/path.parquet")
+        aoo = AOOGrid.from_parquet("/fake/path.parquet", ecosystem_column='ECO_NAME')
         assert isinstance(aoo, AOOGridVectorLocal)
 
     def test_from_geojson(self):
-        aoo = AOOGrid.from_geojson("/fake/path.geojson")
+        aoo = AOOGrid.from_geojson("/fake/path.geojson", ecosystem_column='ECO_NAME')
         assert isinstance(aoo, AOOGridVectorLocal)
 
     def test_from_cog(self):
@@ -209,7 +209,7 @@ class TestAOOGridClassmethods:
         mock_fc = MagicMock(spec=ee.FeatureCollection)
         aoo = AOOGrid.from_gee_feature_collection(
             mock_fc, ecosystem_column='ECO_NAME',
-            asset_path='projects/test/assets/cache',
+            gee_asset_path='projects/test/assets/cache',
         )
         assert isinstance(aoo, AOOGridEEFeatureCollection)
 
@@ -224,23 +224,46 @@ GEOJSON_PATH = Path(__file__).parent / "test_data" / "null_island.geojson"
 @pytest.mark.unit
 class TestAOOGridGeoJSON:
     def test_grid_cells_non_empty(self):
-        aoo = AOOGrid.from_geojson(GEOJSON_PATH).compute()
+        aoo = AOOGrid.from_geojson(GEOJSON_PATH, ecosystem_column='ECO_NAME').compute()
         assert len(aoo.grid_cells) > 0
 
     def test_cell_count(self):
-        aoo = AOOGrid.from_geojson(GEOJSON_PATH).compute()
+        aoo = AOOGrid.from_geojson(GEOJSON_PATH, ecosystem_column='ECO_NAME').compute()
         assert aoo.cell_count > 0
 
     def test_aoo_km2(self):
-        aoo = AOOGrid.from_geojson(GEOJSON_PATH).compute()
+        aoo = AOOGrid.from_geojson(GEOJSON_PATH, ecosystem_column='ECO_NAME').compute()
         assert aoo.aoo_km2 > 0
 
     def test_via_ecosystems(self):
         """Constructing via Ecosystems should produce the same result."""
-        eco = Ecosystems.from_geojson(GEOJSON_PATH)
+        eco = Ecosystems.from_geojson(GEOJSON_PATH, ecosystem_column='ECO_NAME')
         aoo = make_aoo(eco).compute()
         assert isinstance(aoo, AOOGridVectorLocal)
         assert aoo.cell_count > 0
+
+    def test_ecosystem_fraction_columns(self):
+        """Grid cells should have fraction columns for each ecosystem."""
+        aoo = AOOGrid.from_geojson(GEOJSON_PATH, ecosystem_column='ECO_NAME').compute()
+        assert 'Null_Island_Tropical_Forest' in aoo.grid_cells.columns
+        assert 'Null_Island_Alpine_Grassland' in aoo.grid_cells.columns
+        assert 'Null_Island_Marine_Shelf' in aoo.grid_cells.columns
+
+    def test_to_polygons(self):
+        """to_polygons().compute() should produce intersection polygons."""
+        aoo = AOOGrid.from_geojson(GEOJSON_PATH, ecosystem_column='ECO_NAME').compute()
+        polygons = aoo.to_polygons().compute()
+        assert polygons.polygon_count > 0
+        gdf = polygons.polygons
+        assert "grid_col" in gdf.columns
+        assert "grid_row" in gdf.columns
+        assert "ECO_NAME" in gdf.columns
+
+    def test_to_polygons_via_make_aoo_polygons(self):
+        """make_aoo_polygons should work for local vector grids."""
+        aoo = AOOGrid.from_geojson(GEOJSON_PATH, ecosystem_column='ECO_NAME').compute()
+        polygons = make_aoo_polygons(aoo).compute()
+        assert polygons.polygon_count > 0
 
 
 # ---------------------------------------------------------------------------
@@ -327,6 +350,13 @@ class TestAOOGridPolygonsBase:
         assert "FakeAOOGridPolygons" in r
         assert "polygons=" in r
 
+    def test_repr_runtime_error_fallback(self):
+        obj = self._make().compute()
+        obj._polygons = None
+        obj._load_polygons = MagicMock(side_effect=RuntimeError("pending"))
+        r = repr(obj)
+        assert "results pending" in r
+
     def test_repr_before_compute(self):
         obj = self._make()
         r = repr(obj)
@@ -363,7 +393,7 @@ class TestAOOGridPolygonEEFC:
             AOOGridPolygonEEFeatureCollection(aoo)
 
     def test_polygons_id_derivation(self):
-        """_polygons_id should derive from asset_path."""
+        """_polygons_id should derive from gee_asset_path."""
         import ee
         from rle_python_gee.aoo import (
             AOOGridEEFeatureCollection,
@@ -375,15 +405,16 @@ class TestAOOGridPolygonEEFC:
         eco.ecosystem_column = 'ECO_NAME'
         aoo = AOOGridEEFeatureCollection.__new__(AOOGridEEFeatureCollection)
         aoo._ecosystems = eco
-        aoo._asset_path = 'projects/test/assets/cache'
+        aoo._gee_asset_path = 'projects/test/assets/cache'
+        aoo._gcs_path = None
         aoo._computed = True
         aoo._grid_cells = None
 
         polygons = AOOGridPolygonEEFeatureCollection(aoo)
         assert polygons._polygons_id == 'projects/test/assets/cache/aoo_grid_polygons'
 
-    def test_custom_asset_path(self):
-        """Should allow overriding asset_path."""
+    def test_custom_gee_asset_path(self):
+        """Should allow overriding gee_asset_path."""
         import ee
         from rle_python_gee.aoo import (
             AOOGridEEFeatureCollection,
@@ -393,14 +424,119 @@ class TestAOOGridPolygonEEFC:
         aoo = AOOGridEEFeatureCollection.__new__(AOOGridEEFeatureCollection)
         aoo._ecosystems = MagicMock()
         aoo._ecosystems.ecosystem_column = 'ECO_NAME'
-        aoo._asset_path = 'projects/test/assets/default'
+        aoo._gee_asset_path = 'projects/test/assets/default'
+        aoo._gcs_path = None
         aoo._computed = True
         aoo._grid_cells = None
 
         polygons = AOOGridPolygonEEFeatureCollection(
-            aoo, asset_path='projects/test/assets/custom'
+            aoo, gee_asset_path='projects/test/assets/custom'
         )
         assert polygons._polygons_id == 'projects/test/assets/custom/aoo_grid_polygons'
+
+    def test_repr_export_task_running(self):
+        """__repr__ should not load polygons while EE export is running."""
+        import ee
+        from rle_python_gee.aoo import (
+            AOOGridEEFeatureCollection,
+            AOOGridPolygonEEFeatureCollection,
+        )
+
+        aoo = AOOGridEEFeatureCollection.__new__(AOOGridEEFeatureCollection)
+        aoo._ecosystems = MagicMock()
+        aoo._ecosystems.ecosystem_column = 'ECO_NAME'
+        aoo._gee_asset_path = 'projects/test/assets/cache'
+        aoo._gcs_path = None
+        aoo._computed = True
+        aoo._grid_cells = None
+
+        polygons = AOOGridPolygonEEFeatureCollection(aoo)
+        polygons._computed = True
+        polygons.task = MagicMock()
+        polygons.task.id = "TASK_RUN_1"
+        polygons._load_polygons = MagicMock(
+            side_effect=AssertionError("should not load while export running")
+        )
+
+        with patch.object(ee.data, "getTaskStatus", return_value=[{"state": "RUNNING"}]):
+            r = repr(polygons)
+        assert "still running" in r
+        assert "TASK_RUN_1" in r
+        assert "AOOGridPolygonEEFeatureCollection" in r
+
+    def test_repr_export_task_completed(self):
+        import ee
+        from rle_python_gee.aoo import (
+            AOOGridEEFeatureCollection,
+            AOOGridPolygonEEFeatureCollection,
+        )
+
+        aoo = AOOGridEEFeatureCollection.__new__(AOOGridEEFeatureCollection)
+        aoo._ecosystems = MagicMock()
+        aoo._ecosystems.ecosystem_column = 'ECO_NAME'
+        aoo._gee_asset_path = 'projects/test/assets/cache'
+        aoo._gcs_path = None
+        aoo._computed = True
+        aoo._grid_cells = None
+
+        polygons = AOOGridPolygonEEFeatureCollection(aoo)
+        polygons._computed = True
+        polygons.task = MagicMock()
+        polygons.task.id = "TASK_DONE"
+        polygons._polygons = _make_test_polygons_gdf(3)
+
+        with patch.object(ee.data, "getTaskStatus", return_value=[{"state": "COMPLETED"}]):
+            r = repr(polygons)
+        assert "polygons=3" in r
+
+    def test_repr_export_task_failed(self):
+        import ee
+        from rle_python_gee.aoo import (
+            AOOGridEEFeatureCollection,
+            AOOGridPolygonEEFeatureCollection,
+        )
+
+        aoo = AOOGridEEFeatureCollection.__new__(AOOGridEEFeatureCollection)
+        aoo._ecosystems = MagicMock()
+        aoo._ecosystems.ecosystem_column = 'ECO_NAME'
+        aoo._gee_asset_path = 'projects/test/assets/cache'
+        aoo._gcs_path = None
+        aoo._computed = True
+        aoo._grid_cells = None
+
+        polygons = AOOGridPolygonEEFeatureCollection(aoo)
+        polygons._computed = True
+        polygons.task = MagicMock()
+        polygons.task.id = "TASK_FAIL"
+
+        with patch.object(ee.data, "getTaskStatus", return_value=[{"state": "FAILED"}]):
+            r = repr(polygons)
+        assert "failed" in r
+        assert "TASK_FAIL" in r
+
+    def test_repr_no_task_asset_pending(self):
+        """Without a session task, defer to base RuntimeError handling."""
+        from rle_python_gee.aoo import (
+            AOOGridEEFeatureCollection,
+            AOOGridPolygonEEFeatureCollection,
+        )
+
+        aoo = AOOGridEEFeatureCollection.__new__(AOOGridEEFeatureCollection)
+        aoo._ecosystems = MagicMock()
+        aoo._ecosystems.ecosystem_column = 'ECO_NAME'
+        aoo._gee_asset_path = 'projects/test/assets/cache'
+        aoo._gcs_path = None
+        aoo._computed = True
+        aoo._grid_cells = None
+
+        polygons = AOOGridPolygonEEFeatureCollection(aoo)
+        polygons._computed = True
+        polygons._load_polygons = MagicMock(
+            side_effect=RuntimeError("Export asset not ready")
+        )
+
+        r = repr(polygons)
+        assert "results pending" in r
 
 
 # ---------------------------------------------------------------------------
@@ -426,7 +562,8 @@ class TestMakeAooPolygonsFactory:
         aoo = AOOGridEEFeatureCollection.__new__(AOOGridEEFeatureCollection)
         aoo._ecosystems = MagicMock()
         aoo._ecosystems.ecosystem_column = 'ECO_NAME'
-        aoo._asset_path = 'projects/test/assets/cache'
+        aoo._gee_asset_path = 'projects/test/assets/cache'
+        aoo._gcs_path = None
         aoo._computed = True
         aoo._grid_cells = None
 
