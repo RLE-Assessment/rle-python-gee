@@ -24,8 +24,58 @@ from rle_python_gee.ecosystems import (
 )
 
 
+import time
+
+
 # AOO grid cell size in meters (10 x 10 km)
 AOO_CELL_SIZE_M = 10_000
+
+
+def wait_for_task(task, *, poll_interval: int = 15) -> None:
+    """Poll an EE export task until it completes, fails, or is cancelled.
+
+    Parameters
+    ----------
+    task : ee.batch.Task
+        The task returned by ``ee.batch.Export.table.*``.
+    poll_interval : int
+        Seconds between status checks (default 60).
+    """
+    import ee
+
+    if task is None:
+        logger.info("No task to wait for — the asset was already cached or compute() has not been called yet.")
+        return
+
+    start = time.monotonic()
+    while True:
+        status = ee.data.getTaskStatus(task.id)[0]
+        state = status['state']
+        elapsed = int(time.monotonic() - start)
+        if state == 'COMPLETED':
+            logger.info("Export completed after %d s: %s", elapsed, task.id)
+            return
+        if state in ('FAILED', 'CANCELLED'):
+            raise RuntimeError(
+                f"Export {state} after {elapsed} s: "
+                f"{status.get('error_message', '')}"
+            )
+        logger.info(
+            "Export state: %s (%d s elapsed) — waiting %d s …",
+            state, elapsed, poll_interval,
+        )
+        time.sleep(poll_interval)
+
+
+
+def _remote_file_exists(path: str) -> bool:
+    """Check if a file exists, supporting gs:// URIs and local paths."""
+    import fsspec
+    try:
+        fs, fpath = fsspec.core.url_to_fs(path)
+        return fs.exists(fpath)
+    except Exception:
+        return False
 
 
 def _build_ee_covering_grid(fc, scale: float = 1e4):
@@ -78,6 +128,7 @@ class AOOGrid(ABC):
     def __init__(self, ecosystems: Ecosystems):
         self._ecosystems = ecosystems
         self._computed = False
+        self.task = None
         self._grid_cells: gpd.GeoDataFrame | None = None
 
     # -- classmethods ---------------------------------------------------------
@@ -90,21 +141,28 @@ class AOOGrid(ABC):
     @classmethod
     def from_gee_feature_collection(cls, data, *,
                                     ecosystem_column: str,
-                                    asset_path: str,
+                                    gee_asset_path: str | None = None,
+                                    gcs_path: str | None = None,
                                     **kwargs) -> "AOOGrid":
         """Create an AOO grid from an Earth Engine FeatureCollection or asset ID."""
         eco = EcosystemsEEFeatureCollection(data, ecosystem_column=ecosystem_column)
-        return AOOGridEEFeatureCollection(eco, asset_path=asset_path, **kwargs)
+        return AOOGridEEFeatureCollection(
+            eco, gee_asset_path=gee_asset_path, gcs_path=gcs_path, **kwargs
+        )
 
     @classmethod
-    def from_parquet(cls, data, **kwargs) -> "AOOGrid":
+    def from_parquet(cls, data, *, ecosystem_column: str, **kwargs) -> "AOOGrid":
         """Create an AOO grid from a GeoParquet file."""
-        return AOOGridVectorLocal(EcosystemsGeoParquet(data), **kwargs)
+        return AOOGridVectorLocal(
+            EcosystemsGeoParquet(data, ecosystem_column=ecosystem_column), **kwargs
+        )
 
     @classmethod
-    def from_geojson(cls, data, **kwargs) -> "AOOGrid":
+    def from_geojson(cls, data, *, ecosystem_column: str, **kwargs) -> "AOOGrid":
         """Create an AOO grid from a GeoJSON file."""
-        return AOOGridVectorLocal(EcosystemsGeoJSON(data), **kwargs)
+        return AOOGridVectorLocal(
+            EcosystemsGeoJSON(data, ecosystem_column=ecosystem_column), **kwargs
+        )
 
     @classmethod
     def from_cog(cls, data, **kwargs) -> "AOOGrid":
@@ -161,6 +219,51 @@ class AOOGrid(ABC):
     def aoo_km2(self) -> float:
         """AOO in km² (cell count × 100 km² per cell)."""
         return self.cell_count * (AOO_CELL_SIZE_M / 1000) ** 2
+
+    # -- export / write -------------------------------------------------------
+
+    def to_ee_feature_collection(self, asset_id: str, *,
+                                  gcs_bucket: str | None = None):
+        """Export grid cells to an Earth Engine table asset.
+
+        Returns the task/result, or None if asset already exists.
+        """
+        from rle_python_gee.ecosystems import _upload_gdf_to_ee_asset
+
+        return _upload_gdf_to_ee_asset(
+            self.grid_cells, asset_id,
+            gcs_bucket=gcs_bucket, description="aoo_grid_export"
+        )
+
+    def to_parquet(self, path) -> None:
+        """Write grid cells as a GeoParquet file."""
+        from pathlib import Path
+        Path(path).parent.mkdir(parents=True, exist_ok=True)
+        self.grid_cells.to_parquet(path)
+
+    # -- filtering -----------------------------------------------------------
+
+    def filter_by_ecosystem(self, ecosystem_name: str,
+                            threshold: float = 0.0) -> "FilteredAOOGrid":
+        """Return a filtered AOOGrid with only cells where the ecosystem
+        fraction exceeds *threshold*.
+
+        Args:
+            ecosystem_name: Ecosystem name as it appears in the source data.
+            threshold: Minimum fractional area (0.0–1.0). Default 0.0 means
+                any presence.
+        """
+        import re
+        col = re.sub(r'[^a-zA-Z0-9_-]', '_', ecosystem_name)
+        if col not in self.grid_cells.columns:
+            skip = {"grid_col", "grid_row", "count_geoms", "count_ecosystems", "geometry"}
+            available = [c for c in self.grid_cells.columns if c not in skip]
+            raise ValueError(
+                f"Ecosystem column '{col}' not found. "
+                f"Available: {available}"
+            )
+        mask = self.grid_cells[col] > threshold
+        return FilteredAOOGrid(self, mask)
 
     # -- visualization -------------------------------------------------------
 
@@ -236,6 +339,30 @@ class AOOGrid(ABC):
 
 
 # ---------------------------------------------------------------------------
+# Filtered view
+# ---------------------------------------------------------------------------
+
+
+class FilteredAOOGrid(AOOGrid):
+    """A filtered view of an AOOGrid, showing only cells matching a predicate."""
+
+    def __init__(self, source: AOOGrid, mask):
+        self._source = source
+        self._mask = mask
+        self._computed = source._computed
+        self._grid_cells = None
+        self._ecosystems = source._ecosystems
+
+    def _compute(self):
+        raise RuntimeError(
+            "Cannot compute a filtered grid — compute the source grid first."
+        )
+
+    def _load_grid_cells(self):
+        return self._source.grid_cells[self._mask].reset_index(drop=True)
+
+
+# ---------------------------------------------------------------------------
 # Earth Engine Image backend
 # ---------------------------------------------------------------------------
 
@@ -276,30 +403,39 @@ class AOOGridEEFeatureCollection(AOOGrid):
     """AOO grid from an Earth Engine FeatureCollection.
 
     Uses ``ee.Join.saveAll`` to find grid cells that intersect ecosystem
-    features.  The intersection result is exported to an EE asset.
+    features.  Results can be exported to an EE asset and/or GCS parquet.
     """
 
     def __init__(self, ecosystems: EcosystemsEEFeatureCollection, *,
-                 asset_path: str):
+                 gee_asset_path: str,
+                 gcs_path: str | None = None):
         super().__init__(ecosystems)
-        self._asset_path = asset_path
+        self._gee_asset_path = gee_asset_path
+        self._gcs_path = gcs_path
 
     @property
     def _intersections_id(self) -> str:
         from pathlib import PurePosixPath
-        return str(PurePosixPath(self._asset_path) / 'aoo_grid')
+        return str(PurePosixPath(self._gee_asset_path) / 'aoo_grid')
+
+    @property
+    def _gcs_parquet_path(self) -> str | None:
+        """GCS path for the parquet file (written on first load from EE asset)."""
+        if self._gcs_path is None:
+            return None
+        return self._gcs_path.rstrip('/') + '/aoo_grid.parquet'
 
     def _compute(self) -> None:
         import ee
 
         intersections_id = self._intersections_id
 
-        # --- check if already computed ---
+        # --- check if already computed (EE asset) ---
         logger.info("Checking for cached asset: %s", intersections_id)
         try:
             ee.data.getAsset(intersections_id)
             logger.info("Found cached asset: %s", intersections_id)
-            return  # already computed
+            return
         except ee.EEException:
             logger.info("No cached asset found, computing from scratch")
 
@@ -330,15 +466,22 @@ class AOOGridEEFeatureCollection(AOOGrid):
         # --- export to EE asset ---
         task = ee.batch.Export.table.toAsset(
             collection=fc_grid_intersects,
-            description="AOO_grid_intersections",
+            description="AOOGridEEFeatureCollection_grid_intersections",
             assetId=intersections_id,
         )
         task.start()
-        logger.info("Export task started (task ID: %s)", task.id)
-
-        logger.info("Export task running in background")
+        self.task = task
+        logger.info("EE export task started (task ID: %s)", task.id)
 
     def _load_grid_cells(self) -> gpd.GeoDataFrame:
+        # --- try GCS parquet first ---
+        gcs_parquet_path = self._gcs_parquet_path
+        if gcs_parquet_path is not None and _remote_file_exists(gcs_parquet_path):
+            gdf = gpd.read_parquet(gcs_parquet_path)
+            logger.info("Loaded grid cells from parquet: %s", gcs_parquet_path)
+            return gdf
+
+        # --- download from EE asset ---
         import ee
 
         intersections_id = self._intersections_id
@@ -358,12 +501,32 @@ class AOOGridEEFeatureCollection(AOOGrid):
             "expression": cached,
             "fileFormat": "GEOPANDAS_GEODATAFRAME",
         })
-        return gdf.set_crs("EPSG:4326")
+        gdf = gdf.set_crs("EPSG:4326")
+
+        # --- write parquet to GCS if configured ---
+        if gcs_parquet_path is not None:
+            try:
+                gdf.to_parquet(gcs_parquet_path)
+                logger.info("GeoParquet written to: %s", gcs_parquet_path)
+            except Exception:
+                logger.warning("Failed to write GeoParquet to: %s", gcs_parquet_path, exc_info=True)
+
+        return gdf
 
     def to_layer(self, *, get_fill_color=None, get_line_color=None):
-        """Return a BitmapTileLayer rendering the grid cells via EE tiles."""
+        """Return layers rendering the grid cells.
+
+        Uses EE tiles when a gee_asset_path is available, otherwise falls
+        back to the base-class lonboard PolygonLayer from the GeoDataFrame.
+        """
         if not self._computed:
             raise AOOGridNotComputedError()
+
+        intersections_id = self._intersections_id
+        if intersections_id is None:
+            # No EE asset — fall back to base class (GeoDataFrame-based)
+            return super().to_layer()
+
         try:
             from lonboard import BitmapTileLayer
         except ImportError:
@@ -374,7 +537,6 @@ class AOOGridEEFeatureCollection(AOOGrid):
 
         import ee
 
-        intersections_id = self._intersections_id
         try:
             ee.data.getAsset(intersections_id)
         except ee.EEException:
@@ -433,20 +595,87 @@ class AOOGridVectorLocal(AOOGrid):
     """AOO grid from a local vector dataset (GeoJSON or GeoParquet)."""
 
     def _compute(self) -> None:
-        from rle_python_gee.aoo_grid import generate_aoo_grid
+        import pandas as pd
+        from rle_python_gee.aoo_grid import generate_aoo_grid, AOO_CRS, AOO_CELL_SIZE
 
         eco = self._ecosystems.load()
+        if eco.crs is not None and not eco.crs.equals("EPSG:4326"):
+            eco = eco.to_crs("EPSG:4326")
         grid = generate_aoo_grid(eco.total_bounds)
 
-        # Keep only grid cells that intersect ecosystem features
-        intersecting = gpd.sjoin(grid, eco, how="inner", predicate="intersects")
-        # joins may duplicate grid rows — deduplicate by index
-        intersecting = grid.loc[intersecting.index.unique()]
+        eco_col = self._ecosystems.ecosystem_column
 
-        self._computed_gdf = intersecting[["geometry"]].reset_index(drop=True)
+        # Spatial join to find (grid_cell, ecosystem) pairs
+        joined = gpd.sjoin(grid, eco, how="inner", predicate="intersects")
+        if joined.empty:
+            self._computed_gdf = gpd.GeoDataFrame(
+                columns=["grid_col", "grid_row", "count_geoms",
+                          "count_ecosystems", "geometry"]
+            )
+            return
+
+        # Compute intersection areas in equal-area CRS
+        grid_ea = grid.to_crs(AOO_CRS)
+        eco_ea = eco.to_crs(AOO_CRS)
+        cell_area = AOO_CELL_SIZE * AOO_CELL_SIZE
+
+        rows = []
+        for grid_idx, eco_idx in zip(joined.index, joined["index_right"]):
+            isect = grid_ea.geometry.iloc[grid_idx].intersection(
+                eco_ea.geometry.iloc[eco_idx]
+            )
+            if isect.is_empty:
+                continue
+            fraction = isect.area / cell_area
+            row = {"grid_idx": grid_idx, "eco_idx": eco_idx, "fraction": fraction}
+            if eco_col is not None:
+                row["ecosystem"] = eco.iloc[eco_idx][eco_col]
+            rows.append(row)
+
+        if not rows:
+            self._computed_gdf = gpd.GeoDataFrame(
+                columns=["grid_col", "grid_row", "count_geoms",
+                          "count_ecosystems", "geometry"]
+            )
+            return
+
+        fractions = pd.DataFrame(rows)
+
+        # Summary counts per grid cell
+        summary = fractions.groupby("grid_idx").agg(
+            count_geoms=("eco_idx", "count"),
+            count_ecosystems=("ecosystem", "nunique") if eco_col else ("eco_idx", "count"),
+        )
+
+        # Build result with grid geometry
+        result = grid.loc[summary.index].copy()
+        result["count_geoms"] = summary["count_geoms"].values
+        result["count_ecosystems"] = summary["count_ecosystems"].values
+
+        # Wide columns: fractional area per ecosystem
+        if eco_col is not None:
+            pivot = fractions.pivot_table(
+                index="grid_idx", columns="ecosystem",
+                values="fraction", aggfunc="sum", fill_value=0.0,
+            )
+            # Sanitize ecosystem names for use as column names
+            import re
+            pivot.columns = [
+                re.sub(r'[^a-zA-Z0-9_-]', '_', str(c))
+                for c in pivot.columns
+            ]
+            # Ensure all intersecting grid cells have all ecosystem columns (fill 0)
+            result = result.join(pivot)
+            result[pivot.columns] = result[pivot.columns].fillna(0.0)
+
+        self._computed_gdf = result.reset_index(drop=True)
 
     def _load_grid_cells(self) -> gpd.GeoDataFrame:
         return self._computed_gdf
+
+    def to_polygons(self, **kwargs) -> "AOOGridPolygonVectorLocal":
+        """Create intersection polygons for this local vector grid."""
+        return AOOGridPolygonVectorLocal(self, **kwargs)
 
 
 # Backward-compatibility aliases
@@ -538,7 +767,7 @@ def make_aoo(data, **kwargs) -> AOOGrid:
     # Legacy: auto-detect from raw data
     # Split kwargs: ecosystem_column goes to make_ecosystems,
     # asset_path/synchronous go to AOOGrid constructor
-    aoo_only_keys = ('asset_path',)
+    aoo_only_keys = ('gee_asset_path', 'gcs_path')
     eco_kwargs = {k: v for k, v in kwargs.items() if k not in aoo_only_keys}
     aoo_kwargs = {k: v for k, v in kwargs.items() if k not in ('ecosystem_column',)}
     eco = make_ecosystems(data, **eco_kwargs)
@@ -572,6 +801,7 @@ class AOOGridPolygons(ABC):
         self._aoo_grid = aoo_grid
         self._computed = False
         self._polygons: gpd.GeoDataFrame | None = None
+        self.task = None
 
     # -- abstract interface --------------------------------------------------
 
@@ -611,7 +841,10 @@ class AOOGridPolygons(ABC):
     def __repr__(self) -> str:
         if not self._computed:
             return f"{type(self).__name__}(not computed)"
-        return f"{type(self).__name__}(polygons={self.polygon_count})"
+        try:
+            return f"{type(self).__name__}(polygons={self.polygon_count})"
+        except RuntimeError:
+            return f"{type(self).__name__}(computed, results pending)"
 
     def _repr_html_(self) -> str:
         if not self._computed:
@@ -631,9 +864,30 @@ class AOOGridPolygons(ABC):
             f"Polygons: {count:,}"
         )
 
+    # -- export / write -------------------------------------------------------
+
+    def to_ee_feature_collection(self, asset_id: str, *,
+                                  gcs_bucket: str | None = None):
+        """Export intersection polygons to an Earth Engine table asset.
+
+        Returns the task/result, or None if asset already exists.
+        """
+        from rle_python_gee.ecosystems import _upload_gdf_to_ee_asset
+
+        return _upload_gdf_to_ee_asset(
+            self.polygons, asset_id,
+            gcs_bucket=gcs_bucket, description="aoo_grid_polygons_export"
+        )
+
+    def to_parquet(self, path) -> None:
+        """Write intersection polygons as a GeoParquet file."""
+        from pathlib import Path
+        Path(path).parent.mkdir(parents=True, exist_ok=True)
+        self.polygons.to_parquet(path)
+
     # -- visualization -------------------------------------------------------
 
-    def to_layer(self):
+    def to_layer(self, *, get_fill_color=None, get_line_color=None):
         """Return lonboard layer(s) for the intersection polygons."""
         if not self._computed:
             raise AOOGridPolygonsNotComputedError()
@@ -645,13 +899,25 @@ class AOOGridPolygons(ABC):
                 "Install it with: pip install lonboard"
             ) from None
 
+        if get_fill_color is None:
+            get_fill_color = [0, 128, 255, 128]
+        if get_line_color is None:
+            get_line_color = [0, 0, 0, 255]
+
         gdf = self.polygons
         if gdf.empty:
             return []
+        if len(gdf) > 1000:
+            raise ValueError(
+                f"Dataset has {len(gdf):,} polygons, which is too many to "
+                f"display interactively. Export to parquet with "
+                f".polygons.to_parquet(path) instead."
+            )
         return [PolygonLayer.from_geopandas(
             gdf,
-            get_fill_color=[0, 128, 255, 160],
-            get_line_color=[0, 0, 0, 255],
+            get_fill_color=get_fill_color,
+            get_line_color=get_line_color,
+            line_width_min_pixels=1,
         )]
 
     def to_map(self, **kwargs):
@@ -664,7 +930,13 @@ class AOOGridPolygons(ABC):
                 "Install it with: pip install lonboard"
             ) from None
 
-        layers = self.to_layer()
+        try:
+            layers = self.to_layer()
+        except ValueError as e:
+            from IPython.display import HTML, display
+            display(HTML(f"<div style='padding:12px;background:#fff3cd;border:1px solid #ffc107;border-radius:4px'>"
+                         f"<b>Cannot display map:</b> {e}</div>"))
+            return None
         return Map(layers=layers, **kwargs)
 
 
@@ -677,26 +949,57 @@ class AOOGridPolygonEEFeatureCollection(AOOGridPolygons):
     """
 
     def __init__(self, aoo_grid: AOOGridEEFeatureCollection, *,
-                 asset_path: str | None = None):
+                 gee_asset_path: str | None = None,
+                 gcs_path: str | None = None):
         if not isinstance(aoo_grid, AOOGridEEFeatureCollection):
             raise TypeError(
                 "AOOGridPolygonEEFeatureCollection requires an "
                 "AOOGridEEFeatureCollection instance"
             )
         super().__init__(aoo_grid)
-        self._asset_path = asset_path or aoo_grid._asset_path
+        self._gee_asset_path = gee_asset_path or aoo_grid._gee_asset_path
+        self._gcs_path = gcs_path if gcs_path is not None else aoo_grid._gcs_path
 
     @property
     def _polygons_id(self) -> str:
         from pathlib import PurePosixPath
-        return str(PurePosixPath(self._asset_path) / 'aoo_grid_polygons')
+        return str(PurePosixPath(self._gee_asset_path) / 'aoo_grid_polygons')
+
+    @property
+    def _gcs_parquet_path(self) -> str | None:
+        if self._gcs_path is None:
+            return None
+        return self._gcs_path.rstrip('/') + '/aoo_grid_polygons.parquet'
+
+    def __repr__(self) -> str:
+        if not self._computed:
+            return f"{type(self).__name__}(not computed)"
+        task = getattr(self, "task", None)
+        if task is not None:
+            import ee
+
+            state = ee.data.getTaskStatus(task.id)[0]["state"]
+            if state != "COMPLETED":
+                if state in ("RUNNING", "READY", "PENDING"):
+                    return (
+                        f"{type(self).__name__}"
+                        f"(export task still running, id={task.id})"
+                    )
+                return (
+                    f"{type(self).__name__}"
+                    f"(export task {state.lower()}, id={task.id})"
+                )
+        try:
+            return f"{type(self).__name__}(polygons={self.polygon_count})"
+        except RuntimeError:
+            return f"{type(self).__name__}(computed, results pending)"
 
     def _compute(self) -> None:
         import ee
 
         polygons_id = self._polygons_id
 
-        # --- check if already computed ---
+        # --- check if already computed (EE asset) ---
         logger.info("Checking for cached polygons asset: %s", polygons_id)
         try:
             ee.data.getAsset(polygons_id)
@@ -743,13 +1046,22 @@ class AOOGridPolygonEEFeatureCollection(AOOGridPolygons):
         # --- export to EE asset ---
         task = ee.batch.Export.table.toAsset(
             collection=polygons_fc,
-            description="AOO_grid_polygons",
+            description="AOOGridPolygonEEFeatureCollection_grid_polygons",
             assetId=polygons_id,
         )
         task.start()
-        logger.info("Polygons export task started (task ID: %s)", task.id)
+        self.task = task
+        logger.info("Polygons EE export task started (task ID: %s)", task.id)
 
     def _load_polygons(self) -> gpd.GeoDataFrame:
+        # --- try GCS parquet first ---
+        gcs_parquet_path = self._gcs_parquet_path
+        if gcs_parquet_path is not None and _remote_file_exists(gcs_parquet_path):
+            gdf = gpd.read_parquet(gcs_parquet_path)
+            logger.info("Loaded polygons from parquet: %s", gcs_parquet_path)
+            return gdf
+
+        # --- download from EE asset ---
         import ee
 
         polygons_id = self._polygons_id
@@ -769,7 +1081,17 @@ class AOOGridPolygonEEFeatureCollection(AOOGridPolygons):
             "expression": cached,
             "fileFormat": "GEOPANDAS_GEODATAFRAME",
         })
-        return gdf.set_crs("EPSG:4326")
+        gdf = gdf.set_crs("EPSG:4326")
+
+        # --- write parquet to GCS if configured ---
+        if gcs_parquet_path is not None:
+            try:
+                gdf.to_parquet(gcs_parquet_path)
+                logger.info("GeoParquet written to: %s", gcs_parquet_path)
+            except Exception:
+                logger.warning("Failed to write GeoParquet to: %s", gcs_parquet_path, exc_info=True)
+
+        return gdf
 
     def to_layer(self):
         """Return a BitmapTileLayer rendering intersection polygons via EE tiles."""
@@ -804,6 +1126,68 @@ class AOOGridPolygonEEFeatureCollection(AOOGridPolygons):
         return [BitmapTileLayer(data=tile_url)]
 
 
+class AOOGridPolygonVectorLocal(AOOGridPolygons):
+    """Intersection polygons computed locally via shapely.
+
+    Intersects each grid cell with ecosystem features one at a time
+    to keep memory usage bounded.
+    """
+
+    def _compute(self) -> None:
+        import math
+        import pandas as pd
+        from shapely.geometry import box
+        from rle_python_gee.aoo_grid import AOO_CRS, AOO_CELL_SIZE
+
+        eco = self._aoo_grid._ecosystems.load()
+        if eco.crs is None:
+            eco = eco.set_crs("EPSG:4326")
+        eco_cea = eco.to_crs(AOO_CRS)
+
+        bounds_cea = eco_cea.total_bounds
+        sindex = eco_cea.sindex
+
+        col_min = math.floor(bounds_cea[0] / AOO_CELL_SIZE)
+        col_max = math.ceil(bounds_cea[2] / AOO_CELL_SIZE)
+        row_min = math.floor(bounds_cea[1] / AOO_CELL_SIZE)
+        row_max = math.ceil(bounds_cea[3] / AOO_CELL_SIZE)
+
+        chunks = []
+        for col in range(col_min, col_max):
+            for row in range(row_min, row_max):
+                x0 = col * AOO_CELL_SIZE
+                y0 = row * AOO_CELL_SIZE
+                cell = box(x0, y0, x0 + AOO_CELL_SIZE, y0 + AOO_CELL_SIZE)
+
+                candidates = list(sindex.query(cell))
+                if not candidates:
+                    continue
+
+                subset = eco_cea.iloc[candidates]
+                intersections = subset.intersection(cell)
+                mask = ~intersections.is_empty
+                if not mask.any():
+                    continue
+
+                result = subset.loc[mask].copy()
+                result["geometry"] = intersections[mask]
+                result["grid_col"] = col
+                result["grid_row"] = row
+                chunks.append(result)
+
+        if chunks:
+            self._computed_gdf = gpd.GeoDataFrame(
+                pd.concat(chunks, ignore_index=True), crs=AOO_CRS
+            )
+        else:
+            self._computed_gdf = gpd.GeoDataFrame(
+                columns=["geometry", "grid_col", "grid_row"]
+            )
+
+    def _load_polygons(self) -> gpd.GeoDataFrame:
+        return self._computed_gdf
+
+
 def make_aoo_polygons(aoo_grid: AOOGrid, **kwargs) -> AOOGridPolygons:
     """Create AOO grid polygons from an AOOGrid instance.
 
@@ -816,6 +1200,8 @@ def make_aoo_polygons(aoo_grid: AOOGrid, **kwargs) -> AOOGridPolygons:
     """
     if isinstance(aoo_grid, AOOGridEEFeatureCollection):
         return AOOGridPolygonEEFeatureCollection(aoo_grid, **kwargs)
+    if isinstance(aoo_grid, AOOGridVectorLocal):
+        return AOOGridPolygonVectorLocal(aoo_grid, **kwargs)
     raise ValueError(
         f"AOOGridPolygons not supported for {type(aoo_grid).__name__}"
     )
