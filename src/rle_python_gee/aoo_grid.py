@@ -37,11 +37,17 @@ def generate_aoo_grid(bounds_4326: tuple[float, float, float, float]) -> gpd.Geo
     xs = np.arange(ea_minx, ea_maxx, AOO_CELL_SIZE)
     ys = np.arange(ea_miny, ea_maxy, AOO_CELL_SIZE)
 
-    cells = [
-        box(x, y, x + AOO_CELL_SIZE, y + AOO_CELL_SIZE)
-        for x in xs
-        for y in ys
-    ]
+    grid_cols = []
+    grid_rows = []
+    cells = []
+    for x in xs:
+        for y in ys:
+            grid_cols.append(int(x / AOO_CELL_SIZE))
+            grid_rows.append(int(y / AOO_CELL_SIZE))
+            cells.append(box(x, y, x + AOO_CELL_SIZE, y + AOO_CELL_SIZE))
 
-    grid = gpd.GeoDataFrame(geometry=cells, crs=AOO_CRS)
+    grid = gpd.GeoDataFrame(
+        {"grid_col": grid_cols, "grid_row": grid_rows, "geometry": cells},
+        crs=AOO_CRS,
+    )
     return grid.to_crs("EPSG:4326")
