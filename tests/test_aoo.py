@@ -21,7 +21,7 @@ from rle_python_gee.aoo import (
 )
 from rle_python_gee.ecosystems import (
     Ecosystems,
-    EcosystemsGeoJSON,
+    EcosystemsFile,
     EcosystemsGeoParquet,
 )
 
@@ -167,7 +167,7 @@ class TestMakeAooFactory:
 
     def test_ecosystems_instance(self):
         """make_aoo should accept an Ecosystems instance directly."""
-        eco = EcosystemsGeoJSON("/fake/path.geojson", ecosystem_column='ECO_NAME')
+        eco = EcosystemsFile("/fake/path.geojson", ecosystem_column='ECO_NAME')
         aoo = make_aoo(eco)
         assert isinstance(aoo, AOOGridVectorLocal)
 
@@ -185,8 +185,8 @@ class TestAOOGridClassmethods:
         aoo = AOOGrid.from_parquet("/fake/path.parquet", ecosystem_column='ECO_NAME')
         assert isinstance(aoo, AOOGridVectorLocal)
 
-    def test_from_geojson(self):
-        aoo = AOOGrid.from_geojson("/fake/path.geojson", ecosystem_column='ECO_NAME')
+    def test_from_file(self):
+        aoo = AOOGrid.from_file("/fake/path.geojson", ecosystem_column='ECO_NAME')
         assert isinstance(aoo, AOOGridVectorLocal)
 
     def test_from_cog(self):
@@ -224,34 +224,34 @@ GEOJSON_PATH = Path(__file__).parent / "test_data" / "null_island.geojson"
 @pytest.mark.unit
 class TestAOOGridGeoJSON:
     def test_grid_cells_non_empty(self):
-        aoo = AOOGrid.from_geojson(GEOJSON_PATH, ecosystem_column='ECO_NAME').compute()
+        aoo = AOOGrid.from_file(GEOJSON_PATH, ecosystem_column='ECO_NAME').compute()
         assert len(aoo.grid_cells) > 0
 
     def test_cell_count(self):
-        aoo = AOOGrid.from_geojson(GEOJSON_PATH, ecosystem_column='ECO_NAME').compute()
+        aoo = AOOGrid.from_file(GEOJSON_PATH, ecosystem_column='ECO_NAME').compute()
         assert aoo.cell_count > 0
 
     def test_aoo_km2(self):
-        aoo = AOOGrid.from_geojson(GEOJSON_PATH, ecosystem_column='ECO_NAME').compute()
+        aoo = AOOGrid.from_file(GEOJSON_PATH, ecosystem_column='ECO_NAME').compute()
         assert aoo.aoo_km2 > 0
 
     def test_via_ecosystems(self):
         """Constructing via Ecosystems should produce the same result."""
-        eco = Ecosystems.from_geojson(GEOJSON_PATH, ecosystem_column='ECO_NAME')
+        eco = Ecosystems.from_file(GEOJSON_PATH, ecosystem_column='ECO_NAME')
         aoo = make_aoo(eco).compute()
         assert isinstance(aoo, AOOGridVectorLocal)
         assert aoo.cell_count > 0
 
     def test_ecosystem_fraction_columns(self):
         """Grid cells should have fraction columns for each ecosystem."""
-        aoo = AOOGrid.from_geojson(GEOJSON_PATH, ecosystem_column='ECO_NAME').compute()
+        aoo = AOOGrid.from_file(GEOJSON_PATH, ecosystem_column='ECO_NAME').compute()
         assert 'Null_Island_Tropical_Forest' in aoo.grid_cells.columns
         assert 'Null_Island_Alpine_Grassland' in aoo.grid_cells.columns
         assert 'Null_Island_Marine_Shelf' in aoo.grid_cells.columns
 
     def test_to_polygons(self):
         """to_polygons().compute() should produce intersection polygons."""
-        aoo = AOOGrid.from_geojson(GEOJSON_PATH, ecosystem_column='ECO_NAME').compute()
+        aoo = AOOGrid.from_file(GEOJSON_PATH, ecosystem_column='ECO_NAME').compute()
         polygons = aoo.to_polygons().compute()
         assert polygons.polygon_count > 0
         gdf = polygons.polygons
@@ -261,7 +261,7 @@ class TestAOOGridGeoJSON:
 
     def test_to_polygons_via_make_aoo_polygons(self):
         """make_aoo_polygons should work for local vector grids."""
-        aoo = AOOGrid.from_geojson(GEOJSON_PATH, ecosystem_column='ECO_NAME').compute()
+        aoo = AOOGrid.from_file(GEOJSON_PATH, ecosystem_column='ECO_NAME').compute()
         polygons = make_aoo_polygons(aoo).compute()
         assert polygons.polygon_count > 0
 

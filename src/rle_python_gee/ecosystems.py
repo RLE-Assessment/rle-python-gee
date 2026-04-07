@@ -325,9 +325,9 @@ class Ecosystems(ABC):
     # -- factory classmethods -------------------------------------------------
 
     @classmethod
-    def from_geojson(cls, path, *, ecosystem_column: str, **kwargs) -> "Ecosystems":
-        """Create from a GeoJSON file."""
-        return EcosystemsGeoJSON(path, ecosystem_column=ecosystem_column, **kwargs)
+    def from_file(cls, path, *, ecosystem_column: str, **kwargs) -> "Ecosystems":
+        """Create from a vector file (Shapefile, GeoJSON, etc.)."""
+        return EcosystemsFile(path, ecosystem_column=ecosystem_column, **kwargs)
 
     @classmethod
     def from_parquet(cls, path, *, ecosystem_column: str, **kwargs) -> "Ecosystems":
@@ -359,8 +359,8 @@ class Ecosystems(ABC):
 # ---------------------------------------------------------------------------
 
 
-class EcosystemsGeoJSON(Ecosystems):
-    """Ecosystem polygons from a GeoJSON file."""
+class EcosystemsFile(Ecosystems):
+    """Ecosystem polygons from a vector file (Shapefile, GeoJSON, etc.)."""
 
     kind = EcosystemKind.VECTOR_LOCAL
 
@@ -516,7 +516,7 @@ def make_ecosystems(data, **kwargs) -> Ecosystems:
     # File paths
     if isinstance(data, str):
         if data.endswith(".geojson"):
-            return EcosystemsGeoJSON(data, **kwargs)
+            return EcosystemsFile(data, **kwargs)
         if data.endswith(".parquet"):
             return EcosystemsGeoParquet(data, **kwargs)
         if data.endswith((".tif", ".tiff")):

@@ -15,7 +15,7 @@ logger = logging.getLogger(__name__)
 from rle_python_gee.ecosystems import (
     Ecosystems,
     EcosystemKind,
-    EcosystemsGeoJSON,
+    EcosystemsFile,
     EcosystemsGeoParquet,
     EcosystemsEEFeatureCollection,
     EcosystemsEEImage,
@@ -158,10 +158,10 @@ class AOOGrid(ABC):
         )
 
     @classmethod
-    def from_geojson(cls, data, *, ecosystem_column: str, **kwargs) -> "AOOGrid":
-        """Create an AOO grid from a GeoJSON file."""
+    def from_file(cls, data, *, ecosystem_column: str, **kwargs) -> "AOOGrid":
+        """Create an AOO grid from a vector file (Shapefile, GeoJSON, etc.)."""
         return AOOGridVectorLocal(
-            EcosystemsGeoJSON(data, ecosystem_column=ecosystem_column), **kwargs
+            EcosystemsFile(data, ecosystem_column=ecosystem_column), **kwargs
         )
 
     @classmethod
