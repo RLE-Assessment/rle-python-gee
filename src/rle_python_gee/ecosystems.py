@@ -186,6 +186,24 @@ class Ecosystems(ABC):
             return data.head(n)
         return data
 
+    def size(self) -> int:
+        """Return the number of features."""
+        data = self.load()
+        if hasattr(data, '__len__'):
+            return len(data)
+        raise NotImplementedError(
+            f"size not supported for {self.kind.value}"
+        )
+
+    def limit(self, n: int) -> "Ecosystems":
+        """Return a new Ecosystems with only the first n features."""
+        data = self.load()
+        if hasattr(data, 'iloc'):
+            return EcosystemsGeoDataFrame(data.iloc[:n], ecosystem_column=self.ecosystem_column)
+        raise NotImplementedError(
+            f"limit not supported for {self.kind.value}"
+        )
+
     def unique_ecosystems(self) -> list[str]:
         """Return a sorted list of unique ecosystem values."""
         if self.ecosystem_column is None:
@@ -196,6 +214,29 @@ class Ecosystems(ABC):
         raise NotImplementedError(
             f"unique_ecosystems not supported for {self.kind.value}"
         )
+
+    def filter(self, pattern: str, *, regex: bool = False) -> "Ecosystems":
+        """Return a new Ecosystems containing only features matching the given value.
+
+        Args:
+            pattern: Exact value or regex pattern to match against the ecosystem column.
+            regex: If True, treat pattern as a regular expression.
+
+        Returns:
+            A new Ecosystems object with only the matching features.
+        """
+        if self.ecosystem_column is None:
+            raise ValueError("ecosystem_column is not set")
+        data = self.load()
+        if not hasattr(data, '__getitem__'):
+            raise NotImplementedError(
+                f"filter not supported for {self.kind.value}"
+            )
+        if regex:
+            mask = data[self.ecosystem_column].str.match(pattern)
+        else:
+            mask = data[self.ecosystem_column] == pattern
+        return EcosystemsGeoDataFrame(data[mask], ecosystem_column=self.ecosystem_column)
 
     def _feature_count(self) -> int | None:
         """Return the number of features, or None if not applicable."""
@@ -249,8 +290,14 @@ class Ecosystems(ABC):
 
     # -- visualization -------------------------------------------------------
 
-    def to_layer(self, *, get_fill_color=None, get_line_color=None):
-        """Return lonboard layer(s) for this ecosystem dataset."""
+    def to_layer(self, *, get_fill_color=None, get_line_color=None, max_features: int = 1000):
+        """Return lonboard layer(s) for this ecosystem dataset.
+
+        Args:
+            get_fill_color: Fill color for polygons.
+            get_line_color: Line color for polygons.
+            max_features: Maximum number of features to display. Default 5000.
+        """
         if self.kind != EcosystemKind.VECTOR_LOCAL:
             raise NotImplementedError(
                 f"Visualization not yet supported for {self.kind.value}"
@@ -271,13 +318,11 @@ class Ecosystems(ABC):
         gdf = self.load()
         if gdf.empty:
             return []
-        if len(gdf) > 1000:
+        if len(gdf) > max_features:
             raise ValueError(
-                f"Dataset has {len(gdf):,} features, which is too many to "
-                f"display interactively. Upload to Earth Engine with "
-                f".to_ee_feature_collection(asset_id) and use "
-                f"Ecosystems.from_gee_feature_collection() for tile-based "
-                f"visualization."
+                f"Dataset has {len(gdf):,} features, exceeding max_features={max_features:,}. "
+                f"Use .limit() or .filter() to reduce, increase max_features, "
+                f"or upload to Earth Engine for tile-based visualization."
             )
         return [PolygonLayer.from_geopandas(
             gdf,
@@ -385,6 +430,19 @@ class EcosystemsGeoParquet(Ecosystems):
         import geopandas as gpd
 
         return gpd.read_parquet(self._data)
+
+
+class EcosystemsGeoDataFrame(Ecosystems):
+    """Ecosystem polygons from an in-memory GeoDataFrame."""
+
+    kind = EcosystemKind.VECTOR_LOCAL
+
+    def __init__(self, data, *, ecosystem_column: str):
+        super().__init__(data, ecosystem_column=ecosystem_column)
+        self._cached = data
+
+    def _load(self):
+        return self._data
 
 
 # ---------------------------------------------------------------------------
