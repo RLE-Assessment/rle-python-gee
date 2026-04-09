@@ -54,7 +54,7 @@ def get_aoo_grid_projection(scale: float = 1e4) -> ee.Projection:
     return proj
 
 
-def make_eoo(
+def _compute_eoo_ee_image(
     class_img: ee.Image,
     geo: ee.Geometry = None,
     scale: int = None,
@@ -270,11 +270,11 @@ def export_fractional_coverage_on_aoo_grid(
     return task
 
 
-def make_aoo(data, **kwargs):
+def make_aoo_grid(data, **kwargs):
     """Create an AOO grid from the given data source.
 
     Auto-detects the data type and returns the appropriate AOOGrid subclass.
-    See :func:`rle_python_gee.aoo.make_aoo` for full documentation.
+    See :func:`rle_python_gee.aoo.make_aoo_grid` for full documentation.
 
     Args:
         data: Data source (EE asset ID, ee.Image, ee.FeatureCollection,
@@ -284,6 +284,25 @@ def make_aoo(data, **kwargs):
     Returns:
         An AOOGrid instance.
     """
-    from rle_python_gee.aoo import make_aoo as _make_aoo
+    from rle_python_gee.aoo import make_aoo_grid as _make_aoo_grid
 
-    return _make_aoo(data, **kwargs)
+    return _make_aoo_grid(data, **kwargs)
+
+
+def make_eoo(data, **kwargs):
+    """Create an EOO from the given data source.
+
+    Auto-detects the data type and returns the appropriate EOO subclass.
+    See :func:`rle_python_gee.eoo.make_eoo` for full documentation.
+
+    Args:
+        data: Data source (Ecosystems instance, ee.Image, EE asset ID,
+            .parquet path, or .geojson path).
+        **kwargs: Additional arguments passed to the backend constructor.
+
+    Returns:
+        An EOO instance.
+    """
+    from rle_python_gee.eoo import make_eoo as _make_eoo
+
+    return _make_eoo(data, **kwargs)

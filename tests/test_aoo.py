@@ -16,7 +16,7 @@ from rle_python_gee.aoo import (
     AOOGridPolygons,
     AOOGridPolygonsNotComputedError,
     AOOGridVectorLocal,
-    make_aoo,
+    make_aoo_grid,
     make_aoo_polygons,
 )
 from rle_python_gee.ecosystems import (
@@ -138,37 +138,37 @@ class TestAOOGridBase:
 
 @pytest.mark.unit
 class TestMakeAooFactory:
-    """Tests for the make_aoo factory function."""
+    """Tests for the make_aoo_grid factory function."""
 
     def test_parquet_detection(self):
-        aoo = make_aoo("/fake/path.parquet", ecosystem_column='ECO_NAME')
+        aoo = make_aoo_grid("/fake/path.parquet", ecosystem_column='ECO_NAME')
         assert isinstance(aoo, AOOGridVectorLocal)
 
     def test_geojson_detection(self):
-        aoo = make_aoo("/fake/path.geojson", ecosystem_column='ECO_NAME')
+        aoo = make_aoo_grid("/fake/path.geojson", ecosystem_column='ECO_NAME')
         assert isinstance(aoo, AOOGridVectorLocal)
 
     def test_tif_detection(self):
         from rle_python_gee.aoo import AOOGridCOG
 
-        aoo = make_aoo("/fake/path.tif")
+        aoo = make_aoo_grid("/fake/path.tif")
         assert isinstance(aoo, AOOGridCOG)
 
     def test_ee_image_detection(self):
         import ee
 
         mock_image = MagicMock(spec=ee.Image)
-        aoo = make_aoo(mock_image)
+        aoo = make_aoo_grid(mock_image)
         assert isinstance(aoo, AOOGridEEImage)
 
     def test_unknown_data_raises(self):
         with pytest.raises(ValueError, match="Cannot determine ecosystem backend"):
-            make_aoo(12345)
+            make_aoo_grid(12345)
 
     def test_ecosystems_instance(self):
-        """make_aoo should accept an Ecosystems instance directly."""
+        """make_aoo_grid should accept an Ecosystems instance directly."""
         eco = EcosystemsFile("/fake/path.geojson", ecosystem_column='ECO_NAME')
-        aoo = make_aoo(eco)
+        aoo = make_aoo_grid(eco)
         assert isinstance(aoo, AOOGridVectorLocal)
 
 
@@ -238,7 +238,7 @@ class TestAOOGridGeoJSON:
     def test_via_ecosystems(self):
         """Constructing via Ecosystems should produce the same result."""
         eco = Ecosystems.from_file(GEOJSON_PATH, ecosystem_column='ECO_NAME')
-        aoo = make_aoo(eco).compute()
+        aoo = make_aoo_grid(eco).compute()
         assert isinstance(aoo, AOOGridVectorLocal)
         assert aoo.cell_count > 0
 

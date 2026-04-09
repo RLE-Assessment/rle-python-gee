@@ -1,6 +1,6 @@
 """Area of Occupancy (AOO) grid computation for RLE assessments.
 
-Provides the AOOGrid class hierarchy and make_aoo() factory function
+Provides the AOOGrid class hierarchy and make_aoo_grid() factory function
 for computing AOO grids from multiple data sources (Earth Engine Images,
 Earth Engine FeatureCollections, geoparquet files, GeoJSON files, and COGs).
 """
@@ -727,7 +727,7 @@ class AOOGridCOG(AOOGrid):
 # ---------------------------------------------------------------------------
 
 
-def make_aoo(data, **kwargs) -> AOOGrid:
+def make_aoo_grid(data, **kwargs) -> AOOGrid:
     """Create an AOO grid from the given data source.
 
     Auto-detects the data type and returns the appropriate AOOGrid subclass.
@@ -748,7 +748,7 @@ def make_aoo(data, **kwargs) -> AOOGrid:
         An AOOGrid instance. Call .compute() to run the computation.
 
     Example:
-        >>> aoo = make_aoo("path/to/data.geojson").compute()
+        >>> aoo = make_aoo_grid("path/to/data.geojson").compute()
         >>> print(aoo.cell_count)
         >>> aoo.to_map()
     """
@@ -771,7 +771,7 @@ def make_aoo(data, **kwargs) -> AOOGrid:
     eco_kwargs = {k: v for k, v in kwargs.items() if k not in aoo_only_keys}
     aoo_kwargs = {k: v for k, v in kwargs.items() if k not in ('ecosystem_column',)}
     eco = make_ecosystems(data, **eco_kwargs)
-    return make_aoo(eco, **aoo_kwargs)
+    return make_aoo_grid(eco, **aoo_kwargs)
 
 
 # ---------------------------------------------------------------------------

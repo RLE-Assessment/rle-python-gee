@@ -296,7 +296,7 @@ class Ecosystems(ABC):
         Args:
             get_fill_color: Fill color for polygons.
             get_line_color: Line color for polygons.
-            max_features: Maximum number of features to display. Default 5000.
+            max_features: Maximum number of features to display. Default 1000.
         """
         if self.kind != EcosystemKind.VECTOR_LOCAL:
             raise NotImplementedError(
@@ -331,8 +331,13 @@ class Ecosystems(ABC):
             line_width_min_pixels=1,
         )]
 
-    def to_map(self, **kwargs):
-        """Return a lonboard Map showing the ecosystem polygons."""
+    def to_map(self, *, max_features: int = 1000, **kwargs):
+        """Return a lonboard Map showing the ecosystem polygons.
+
+        Args:
+            max_features: Maximum number of features to display. Default 1000.
+            **kwargs: Additional arguments passed to lonboard.Map.
+        """
         try:
             from lonboard import Map
         except ImportError:
@@ -342,7 +347,7 @@ class Ecosystems(ABC):
             ) from None
 
         try:
-            layers = self.to_layer()
+            layers = self.to_layer(max_features=max_features)
         except ValueError as e:
             from IPython.display import HTML, display
             display(HTML(f"<div style='padding:12px;background:#fff3cd;border:1px solid #ffc107;border-radius:4px'>"
@@ -571,6 +576,11 @@ def make_ecosystems(data, **kwargs) -> Ecosystems:
     Returns:
         An Ecosystems instance.
     """
+    # Accept Path objects
+    from pathlib import PurePath
+    if isinstance(data, PurePath):
+        data = str(data)
+
     # File paths
     if isinstance(data, str):
         if data.endswith(".geojson"):

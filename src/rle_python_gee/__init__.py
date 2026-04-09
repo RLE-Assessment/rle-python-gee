@@ -10,14 +10,19 @@ except PackageNotFoundError:
     __version__ = "0.0.0.dev"
 
 from rle_python_gee.ee_auth import check_authentication, is_authenticated, print_authentication_status
-from rle_python_gee.ee_rle import make_eoo, area_km2
+from rle_python_gee.ee_rle import area_km2
+from rle_python_gee.eoo import (
+    EOO,
+    EOONotComputedError,
+    make_eoo,
+)
 from rle_python_gee.ecosystems import Ecosystems, make_ecosystems
 from rle_python_gee.aoo import (
     AOOGrid,
     AOOGridNotComputedError,
     AOOGridPolygons,
     AOOGridPolygonsNotComputedError,
-    make_aoo,
+    make_aoo_grid,
     make_aoo_polygons,
     wait_for_task,
 )
@@ -36,11 +41,13 @@ __all__ = [
     "check_authentication",
     "is_authenticated",
     "print_authentication_status",
+    "EOO",
+    "EOONotComputedError",
     "make_eoo",
     "area_km2",
     "Ecosystems",
     "make_ecosystems",
-    "make_aoo",
+    "make_aoo_grid",
     "make_aoo_polygons",
     "AOOGrid",
     "AOOGridNotComputedError",

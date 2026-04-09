@@ -4,6 +4,7 @@ import pytest
 from unittest.mock import Mock, patch, MagicMock
 import ee
 from rle_python_gee import ee_rle
+from rle_python_gee.ee_rle import _compute_eoo_ee_image
 from google.auth import default
 
 
@@ -52,7 +53,7 @@ class TestMakeEOO:
         mock_geo = Mock()
 
         # Call the function
-        result = ee_rle.make_eoo(mock_image, mock_geo)
+        result = _compute_eoo_ee_image(mock_image, mock_geo)
 
         # Verify the chain of calls
         mock_image.updateMask.assert_called_once_with(1)
@@ -95,7 +96,7 @@ class TestMakeEOO:
         mock_geo = Mock()
 
         # Call with custom parameters
-        result = ee_rle.make_eoo(
+        result = _compute_eoo_ee_image(
             mock_image,
             mock_geo,
             max_error=10,
@@ -132,7 +133,7 @@ class TestMakeEOO:
         mock_hull.convexHull.return_value = mock_hull_final
         mock_image.updateMask.return_value.reduceToVectors.return_value.geometry.return_value.convexHull.return_value = mock_hull
 
-        result = ee_rle.make_eoo(mock_image, mock_geo)
+        result = _compute_eoo_ee_image(mock_image, mock_geo)
 
         assert result == mock_hull_final
 
@@ -279,29 +280,29 @@ class TestCreateAssetFolder:
 
 @pytest.mark.unit
 class TestMakeAOO:
-    """Tests for the make_aoo function (now returns AOOGrid)."""
+    """Tests for the make_aoo_grid function (now returns AOOGrid)."""
 
-    def test_make_aoo_returns_aoo_grid_for_ee_image(self):
-        """Test that make_aoo returns an AOOGridEEImage for ee.Image objects."""
+    def test_make_aoo_grid_returns_aoo_grid_for_ee_image(self):
+        """Test that make_aoo_grid returns an AOOGridEEImage for ee.Image objects."""
         from rle_python_gee.aoo import AOOGridEEImage
 
         mock_image = MagicMock(spec=ee.Image)
-        result = ee_rle.make_aoo(mock_image)
+        result = ee_rle.make_aoo_grid(mock_image)
         assert isinstance(result, AOOGridEEImage)
 
-    def test_make_aoo_returns_aoo_grid_for_parquet(self):
-        """Test that make_aoo returns AOOGridGeoParquet for .parquet paths."""
+    def test_make_aoo_grid_returns_aoo_grid_for_parquet(self):
+        """Test that make_aoo_grid returns AOOGridGeoParquet for .parquet paths."""
         from rle_python_gee.aoo import AOOGridGeoParquet
 
-        result = ee_rle.make_aoo("/fake/path.parquet", ecosystem_column='ECO_NAME')
+        result = ee_rle.make_aoo_grid("/fake/path.parquet", ecosystem_column='ECO_NAME')
         assert isinstance(result, AOOGridGeoParquet)
 
-    def test_make_aoo_returns_aoo_grid_for_ee_fc(self):
-        """Test that make_aoo returns AOOGridEEFeatureCollection for ee.FeatureCollection."""
+    def test_make_aoo_grid_returns_aoo_grid_for_ee_fc(self):
+        """Test that make_aoo_grid returns AOOGridEEFeatureCollection for ee.FeatureCollection."""
         from rle_python_gee.aoo import AOOGridEEFeatureCollection
 
         mock_fc = MagicMock(spec=ee.FeatureCollection)
-        result = ee_rle.make_aoo(
+        result = ee_rle.make_aoo_grid(
             mock_fc, ecosystem_column='ECO_NAME',
             gee_asset_path='projects/test/assets/cache',
         )
@@ -334,7 +335,7 @@ class TestIntegrationWithRealEE:
         test_image = ee.Image(1).clip(test_geometry)
 
         # Calculate EOO
-        eoo_poly = ee_rle.make_eoo(test_image, test_geometry)
+        eoo_poly = _compute_eoo_ee_image(test_image, test_geometry)
 
         # Verify result is an ee.Geometry
         assert isinstance(eoo_poly, ee.Geometry)
@@ -361,7 +362,7 @@ class TestIntegrationWithRealEE:
         test_image = ee.Image(1).clip(test_geometry).updateMask(elevation.gte(4500))
 
         # Calculate EOO polygon using bestEffort=True
-        eoo_poly = ee_rle.make_eoo(
+        eoo_poly = _compute_eoo_ee_image(
             class_img=test_image,
             geo=test_geometry,
             scale=100,
@@ -480,14 +481,14 @@ class TestIntegrationWithRealEE:
             except Exception:
                 pass  # Ignore errors during cleanup
 
-    def test_make_aoo_integration(self):
-        """Integration test for make_aoo with real Earth Engine."""
+    def test_make_aoo_grid_integration(self):
+        """Integration test for make_aoo_grid with real Earth Engine."""
         from rle_python_gee.aoo import AOOGrid
 
         # Use an existing fractional coverage asset from the test ecosystem
         asset_id = 'projects/goog-rle-assessments/assets/MMR-T1_1_1/a00_grid'
 
-        aoo = ee_rle.make_aoo(asset_id)
+        aoo = ee_rle.make_aoo_grid(asset_id)
         assert isinstance(aoo, AOOGrid)
 
         # Verify the cell count is reasonable
