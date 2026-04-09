@@ -238,6 +238,41 @@ class Ecosystems(ABC):
             mask = data[self.ecosystem_column] == pattern
         return EcosystemsGeoDataFrame(data[mask], ecosystem_column=self.ecosystem_column)
 
+    def calculate_aoo(self, *, threshold: float = 0.01) -> int:
+        """Calculate the Area of Occupancy (AOO) cell count for this ecosystem.
+
+        Computes an AOO grid, filters by the ecosystem, sorts cells by
+        fractional coverage, and counts cells whose cumulative proportion
+        exceeds *threshold* (Section 6.3.2 of IUCN RLE Guidelines 2024).
+
+        Args:
+            threshold: Minimum cumulative proportion to include a cell.
+                Default 0.01 (exclude cells accounting for up to 1% of
+                total mapped extent).
+
+        Returns:
+            Number of AOO grid cells.
+        """
+        from rle_python_gee.aoo import make_aoo_grid, slugify_ecosystem_name
+
+        ecosystems = self.unique_ecosystems()
+        if len(ecosystems) != 1:
+            raise ValueError(
+                f"calculate_aoo requires exactly one ecosystem, "
+                f"but found {len(ecosystems)}. Filter first with "
+                f".filter('ecosystem_name')."
+            )
+        ecosystem_code = ecosystems[0]
+        column = slugify_ecosystem_name(ecosystem_code)
+
+        aoo_grid = make_aoo_grid(self).compute()
+        filtered = aoo_grid.filter_by_ecosystem(ecosystem_code)
+        gdf = filtered.grid_cells.sort_values(by=column)
+        gdf["cumulative_fraction"] = gdf[column].cumsum()
+        total = gdf["cumulative_fraction"].iloc[-1]
+        gdf["cumulative_proportion"] = gdf["cumulative_fraction"] / total
+        return int(len(gdf[gdf["cumulative_proportion"] > threshold]))
+
     def _feature_count(self) -> int | None:
         """Return the number of features, or None if not applicable."""
         if hasattr(self._cached, '__len__'):

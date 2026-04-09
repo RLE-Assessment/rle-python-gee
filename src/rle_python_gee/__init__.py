@@ -24,6 +24,7 @@ from rle_python_gee.aoo import (
     AOOGridPolygonsNotComputedError,
     make_aoo_grid,
     make_aoo_polygons,
+    slugify_ecosystem_name,
     wait_for_task,
 )
 
@@ -53,6 +54,7 @@ __all__ = [
     "AOOGridNotComputedError",
     "AOOGridPolygons",
     "AOOGridPolygonsNotComputedError",
+    "slugify_ecosystem_name",
     "wait_for_task",
     "create_country_map",
     "get_utm_epsg",

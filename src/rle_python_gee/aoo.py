@@ -6,11 +6,21 @@ Earth Engine FeatureCollections, geoparquet files, GeoJSON files, and COGs).
 """
 
 import logging
+import re
 from abc import ABC, abstractmethod
 
 import geopandas as gpd
 
 logger = logging.getLogger(__name__)
+
+
+def slugify_ecosystem_name(name: str) -> str:
+    """Sanitize an ecosystem name for use as a DataFrame column name.
+
+    Replaces any character that is not alphanumeric, underscore, or hyphen
+    with an underscore.
+    """
+    return re.sub(r'[^a-zA-Z0-9_-]', '_', str(name))
 
 from rle_python_gee.ecosystems import (
     Ecosystems,
@@ -253,8 +263,7 @@ class AOOGrid(ABC):
             threshold: Minimum fractional area (0.0–1.0). Default 0.0 means
                 any presence.
         """
-        import re
-        col = re.sub(r'[^a-zA-Z0-9_-]', '_', ecosystem_name)
+        col = slugify_ecosystem_name(ecosystem_name)
         if col not in self.grid_cells.columns:
             skip = {"grid_col", "grid_row", "count_geoms", "count_ecosystems", "geometry"}
             available = [c for c in self.grid_cells.columns if c not in skip]
@@ -291,7 +300,7 @@ class AOOGrid(ABC):
             line_width_min_pixels=1,
         )]
 
-    def to_map(self, **kwargs):
+    def to_map(self, *, get_fill_color=None, get_line_color=None, **kwargs):
         """Return a lonboard Map showing the AOO grid cells."""
         try:
             from lonboard import Map
@@ -301,7 +310,12 @@ class AOOGrid(ABC):
                 "Install it with: pip install lonboard"
             ) from None
 
-        layers = self.to_layer()
+        layer_kwargs = {}
+        if get_fill_color is not None:
+            layer_kwargs["get_fill_color"] = get_fill_color
+        if get_line_color is not None:
+            layer_kwargs["get_line_color"] = get_line_color
+        layers = self.to_layer(**layer_kwargs)
         return Map(layers=layers, **kwargs)
 
     # -- display -------------------------------------------------------------
@@ -598,7 +612,7 @@ class AOOGridVectorLocal(AOOGrid):
         import pandas as pd
         from rle_python_gee.aoo_grid import generate_aoo_grid, AOO_CRS, AOO_CELL_SIZE
 
-        eco = self._ecosystems.load()
+        eco = self._ecosystems.load().reset_index(drop=True)
         if eco.crs is not None and not eco.crs.equals("EPSG:4326"):
             eco = eco.to_crs("EPSG:4326")
         grid = generate_aoo_grid(eco.total_bounds)
@@ -659,9 +673,8 @@ class AOOGridVectorLocal(AOOGrid):
                 values="fraction", aggfunc="sum", fill_value=0.0,
             )
             # Sanitize ecosystem names for use as column names
-            import re
             pivot.columns = [
-                re.sub(r'[^a-zA-Z0-9_-]', '_', str(c))
+                slugify_ecosystem_name(c)
                 for c in pivot.columns
             ]
             # Ensure all intersecting grid cells have all ecosystem columns (fill 0)
@@ -920,7 +933,7 @@ class AOOGridPolygons(ABC):
             line_width_min_pixels=1,
         )]
 
-    def to_map(self, **kwargs):
+    def to_map(self, *, get_fill_color=None, get_line_color=None, **kwargs):
         """Return a lonboard Map of the intersection polygons."""
         try:
             from lonboard import Map
@@ -930,8 +943,13 @@ class AOOGridPolygons(ABC):
                 "Install it with: pip install lonboard"
             ) from None
 
+        layer_kwargs = {}
+        if get_fill_color is not None:
+            layer_kwargs["get_fill_color"] = get_fill_color
+        if get_line_color is not None:
+            layer_kwargs["get_line_color"] = get_line_color
         try:
-            layers = self.to_layer()
+            layers = self.to_layer(**layer_kwargs)
         except ValueError as e:
             from IPython.display import HTML, display
             display(HTML(f"<div style='padding:12px;background:#fff3cd;border:1px solid #ffc107;border-radius:4px'>"
