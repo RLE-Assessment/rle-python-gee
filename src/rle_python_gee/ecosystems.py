@@ -5,9 +5,16 @@ for loading ecosystem data from multiple backends (GeoJSON, GeoParquet,
 Earth Engine FeatureCollections, Earth Engine Images, COGs).
 """
 
+import re
 from abc import ABC, abstractmethod
 from enum import Enum
 from typing import Any
+
+
+def _natural_key(s: str) -> list:
+    """Sort key that orders numeric parts numerically (e.g. T1.1.2 before T1.1.10)."""
+    return [int(part) if part.isdigit() else part.lower()
+            for part in re.split(r'(\d+)', s)]
 
 
 class EcosystemKind(Enum):
@@ -161,10 +168,12 @@ def _upload_gdf_to_ee_asset(gdf, asset_id: str, *,
 class Ecosystems(ABC):
     """Base class for ecosystem distribution datasets."""
 
-    def __init__(self, data, *, ecosystem_column: str | None = None):
+    def __init__(self, data, *, ecosystem_column: str | None = None,
+                 ecosystem_name_column: str | None = None):
         self._data = data
         self._cached = None
         self.ecosystem_column = ecosystem_column
+        self.ecosystem_name_column = ecosystem_name_column
 
     @property
     @abstractmethod
@@ -199,21 +208,54 @@ class Ecosystems(ABC):
         """Return a new Ecosystems with only the first n features."""
         data = self.load()
         if hasattr(data, 'iloc'):
-            return EcosystemsGeoDataFrame(data.iloc[:n], ecosystem_column=self.ecosystem_column)
+            return EcosystemsGeoDataFrame(data.iloc[:n], ecosystem_column=self.ecosystem_column,
+                                         ecosystem_name_column=self.ecosystem_name_column)
         raise NotImplementedError(
             f"limit not supported for {self.kind.value}"
         )
 
     def unique_ecosystems(self) -> list[str]:
-        """Return a sorted list of unique ecosystem values."""
+        """Return a naturally sorted list of unique ecosystem values."""
         if self.ecosystem_column is None:
             raise ValueError("ecosystem_column is not set")
         data = self.load()
         if hasattr(data, '__getitem__'):
-            return sorted(data[self.ecosystem_column].unique())
+            return sorted(data[self.ecosystem_column].unique(), key=_natural_key)
         raise NotImplementedError(
             f"unique_ecosystems not supported for {self.kind.value}"
         )
+
+    def ecosystem_name(self, code: str) -> str:
+        """Look up the human-readable name for an ecosystem code.
+
+        Requires ``ecosystem_name_column`` to be set.
+        """
+        if self.ecosystem_name_column is None:
+            raise ValueError("ecosystem_name_column is not set")
+        if self.ecosystem_column is None:
+            raise ValueError("ecosystem_column is not set")
+        data = self.load()
+        match = data.loc[data[self.ecosystem_column] == code, self.ecosystem_name_column]
+        if match.empty:
+            raise KeyError(f"Ecosystem code {code!r} not found")
+        return match.iloc[0]
+
+    def ecosystem_names(self) -> dict[str, str]:
+        """Return a mapping of ecosystem codes to their names, sorted naturally by code.
+
+        Requires ``ecosystem_name_column`` to be set.
+        """
+        if self.ecosystem_name_column is None:
+            raise ValueError("ecosystem_name_column is not set")
+        if self.ecosystem_column is None:
+            raise ValueError("ecosystem_column is not set")
+        data = self.load()
+        pairs = data.drop_duplicates(subset=self.ecosystem_column)
+        mapping = dict(zip(
+            pairs[self.ecosystem_column],
+            pairs[self.ecosystem_name_column],
+        ))
+        return {k: mapping[k] for k in sorted(mapping, key=_natural_key)}
 
     def filter(self, pattern: str, *, regex: bool = False) -> "Ecosystems":
         """Return a new Ecosystems containing only features matching the given value.
@@ -236,7 +278,8 @@ class Ecosystems(ABC):
             mask = data[self.ecosystem_column].str.match(pattern)
         else:
             mask = data[self.ecosystem_column] == pattern
-        return EcosystemsGeoDataFrame(data[mask], ecosystem_column=self.ecosystem_column)
+        return EcosystemsGeoDataFrame(data[mask], ecosystem_column=self.ecosystem_column,
+                                     ecosystem_name_column=self.ecosystem_name_column)
 
     def calculate_aoo(self, *, threshold: float = 0.01) -> int:
         """Calculate the Area of Occupancy (AOO) cell count for this ecosystem.
@@ -272,6 +315,18 @@ class Ecosystems(ABC):
         total = gdf["cumulative_fraction"].iloc[-1]
         gdf["cumulative_proportion"] = gdf["cumulative_fraction"] / total
         return int(len(gdf[gdf["cumulative_proportion"] > threshold]))
+
+    def calculate_eoo(self) -> "EOO":
+        """Calculate the Extent of Occurrence (EOO) for this ecosystem.
+
+        Computes the convex hull of all ecosystem geometries and returns
+        an EOO object with the area in km².
+
+        Returns:
+            A computed EOO instance. Access area via ``.area_km2``.
+        """
+        from rle_python_gee.eoo import make_eoo
+        return make_eoo(self).compute()
 
     def _feature_count(self) -> int | None:
         """Return the number of features, or None if not applicable."""
@@ -449,8 +504,9 @@ class EcosystemsFile(Ecosystems):
 
     kind = EcosystemKind.VECTOR_LOCAL
 
-    def __init__(self, data, *, ecosystem_column: str):
-        super().__init__(data, ecosystem_column=ecosystem_column)
+    def __init__(self, data, *, ecosystem_column: str, ecosystem_name_column: str | None = None):
+        super().__init__(data, ecosystem_column=ecosystem_column,
+                         ecosystem_name_column=ecosystem_name_column)
 
     def _load(self):
         import geopandas as gpd
@@ -463,8 +519,9 @@ class EcosystemsGeoParquet(Ecosystems):
 
     kind = EcosystemKind.VECTOR_LOCAL
 
-    def __init__(self, data, *, ecosystem_column: str):
-        super().__init__(data, ecosystem_column=ecosystem_column)
+    def __init__(self, data, *, ecosystem_column: str, ecosystem_name_column: str | None = None):
+        super().__init__(data, ecosystem_column=ecosystem_column,
+                         ecosystem_name_column=ecosystem_name_column)
 
     def _load(self):
         import geopandas as gpd
@@ -477,8 +534,9 @@ class EcosystemsGeoDataFrame(Ecosystems):
 
     kind = EcosystemKind.VECTOR_LOCAL
 
-    def __init__(self, data, *, ecosystem_column: str):
-        super().__init__(data, ecosystem_column=ecosystem_column)
+    def __init__(self, data, *, ecosystem_column: str, ecosystem_name_column: str | None = None):
+        super().__init__(data, ecosystem_column=ecosystem_column,
+                         ecosystem_name_column=ecosystem_name_column)
         self._cached = data
 
     def _load(self):
@@ -495,8 +553,9 @@ class EcosystemsEEFeatureCollection(Ecosystems):
 
     kind = EcosystemKind.EE_FEATURE_COLLECTION
 
-    def __init__(self, data, *, ecosystem_column: str):
-        super().__init__(data, ecosystem_column=ecosystem_column)
+    def __init__(self, data, *, ecosystem_column: str, ecosystem_name_column: str | None = None):
+        super().__init__(data, ecosystem_column=ecosystem_column,
+                         ecosystem_name_column=ecosystem_name_column)
 
     def _load(self):
         import ee

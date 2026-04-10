@@ -849,6 +849,14 @@ class AOOGridPolygons(ABC):
         """Number of (grid cell × ecosystem) intersection polygons."""
         return len(self.polygons)
 
+    def filter_by_ecosystem(self, ecosystem_name: str) -> "FilteredAOOGridPolygons":
+        """Return a filtered view with only polygons for the given ecosystem."""
+        eco_col = self._aoo_grid._ecosystems.ecosystem_column
+        if eco_col is None:
+            raise ValueError("ecosystem_column is not set on the source data")
+        mask = self.polygons[eco_col] == ecosystem_name
+        return FilteredAOOGridPolygons(self, mask)
+
     # -- display -------------------------------------------------------------
 
     def __repr__(self) -> str:
@@ -956,6 +964,25 @@ class AOOGridPolygons(ABC):
                          f"<b>Cannot display map:</b> {e}</div>"))
             return None
         return Map(layers=layers, **kwargs)
+
+
+class FilteredAOOGridPolygons(AOOGridPolygons):
+    """A filtered view of AOOGridPolygons, showing only polygons matching a predicate."""
+
+    def __init__(self, source: AOOGridPolygons, mask):
+        self._source = source
+        self._mask = mask
+        self._computed = source._computed
+        self._polygons = None
+        self._aoo_grid = source._aoo_grid
+
+    def _compute(self):
+        raise RuntimeError(
+            "Cannot compute a filtered polygon set — compute the source first."
+        )
+
+    def _load_polygons(self):
+        return self._source.polygons[self._mask].reset_index(drop=True)
 
 
 class AOOGridPolygonEEFeatureCollection(AOOGridPolygons):
