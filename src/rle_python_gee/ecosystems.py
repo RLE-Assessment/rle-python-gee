@@ -218,6 +218,12 @@ class Ecosystems(ABC):
             self._cached = self._load()
         return self._cached
 
+    @property
+    def geometry(self):
+        """Return the geometry column of the loaded data."""
+        data = self.load()
+        return data.geometry
+
     def head(self, n: int = 5):
         """Return the first n rows of the loaded data."""
         data = self.load()
