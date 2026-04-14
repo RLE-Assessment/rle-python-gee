@@ -247,9 +247,8 @@ class AOOGrid(ABC):
 
     def to_parquet(self, path) -> None:
         """Write grid cells as a GeoParquet file."""
-        from pathlib import Path
-        Path(path).parent.mkdir(parents=True, exist_ok=True)
-        self.grid_cells.to_parquet(path)
+        from rle_python_gee.ecosystems import _write_parquet
+        _write_parquet(self.grid_cells, path)
 
     # -- filtering -----------------------------------------------------------
 
@@ -902,9 +901,8 @@ class AOOGridPolygons(ABC):
 
     def to_parquet(self, path) -> None:
         """Write intersection polygons as a GeoParquet file."""
-        from pathlib import Path
-        Path(path).parent.mkdir(parents=True, exist_ok=True)
-        self.polygons.to_parquet(path)
+        from rle_python_gee.ecosystems import _write_parquet
+        _write_parquet(self.polygons, path)
 
     # -- visualization -------------------------------------------------------
 

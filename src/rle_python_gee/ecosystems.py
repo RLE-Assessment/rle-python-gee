@@ -17,6 +17,34 @@ def _natural_key(s: str) -> list:
             for part in re.split(r'(\d+)', s)]
 
 
+def _write_parquet(gdf, path) -> None:
+    """Write a GeoDataFrame to a GeoParquet file (local or gs://)."""
+    path_str = str(path)
+    if path_str.startswith("gs://"):
+        bucket = path_str.split("/")[2]
+        try:
+            gdf.to_parquet(path_str)
+        except FileNotFoundError as exc:
+            msg = str(exc)
+            if "does not exist" in msg:
+                raise FileNotFoundError(
+                    f"GCS bucket '{bucket}' not found. "
+                    f"Create it with:  gcloud storage buckets create gs://{bucket}"
+                ) from None
+            raise FileNotFoundError(
+                f"Failed to write to {path_str!r}: {msg}"
+            ) from None
+        except ImportError:
+            raise ImportError(
+                "The 'gcsfs' package is required to write to GCS. "
+                "Install it with:  pip install gcsfs"
+            ) from None
+    else:
+        from pathlib import Path
+        Path(path_str).parent.mkdir(parents=True, exist_ok=True)
+        gdf.to_parquet(path_str)
+
+
 class EcosystemKind(Enum):
     VECTOR_LOCAL = "vector_local"
     RASTER_LOCAL = "raster_local"
@@ -169,11 +197,13 @@ class Ecosystems(ABC):
     """Base class for ecosystem distribution datasets."""
 
     def __init__(self, data, *, ecosystem_column: str | None = None,
-                 ecosystem_name_column: str | None = None):
+                 ecosystem_name_column: str | None = None,
+                 functional_group_column: str | None = None):
         self._data = data
         self._cached = None
         self.ecosystem_column = ecosystem_column
         self.ecosystem_name_column = ecosystem_name_column
+        self.functional_group_column = functional_group_column
 
     @property
     @abstractmethod
@@ -209,7 +239,8 @@ class Ecosystems(ABC):
         data = self.load()
         if hasattr(data, 'iloc'):
             return EcosystemsGeoDataFrame(data.iloc[:n], ecosystem_column=self.ecosystem_column,
-                                         ecosystem_name_column=self.ecosystem_name_column)
+                                         ecosystem_name_column=self.ecosystem_name_column,
+                                         functional_group_column=self.functional_group_column)
         raise NotImplementedError(
             f"limit not supported for {self.kind.value}"
         )
@@ -223,6 +254,17 @@ class Ecosystems(ABC):
             return sorted(data[self.ecosystem_column].unique(), key=_natural_key)
         raise NotImplementedError(
             f"unique_ecosystems not supported for {self.kind.value}"
+        )
+
+    def unique_functional_groups(self) -> list[str]:
+        """Return a naturally sorted list of unique functional group values."""
+        if self.functional_group_column is None:
+            raise ValueError("functional_group_column is not set")
+        data = self.load()
+        if hasattr(data, '__getitem__'):
+            return sorted(data[self.functional_group_column].unique(), key=_natural_key)
+        raise NotImplementedError(
+            f"unique_functional_groups not supported for {self.kind.value}"
         )
 
     def ecosystem_name(self, code: str) -> str:
@@ -279,7 +321,8 @@ class Ecosystems(ABC):
         else:
             mask = data[self.ecosystem_column] == pattern
         return EcosystemsGeoDataFrame(data[mask], ecosystem_column=self.ecosystem_column,
-                                     ecosystem_name_column=self.ecosystem_name_column)
+                                     ecosystem_name_column=self.ecosystem_name_column,
+                                     functional_group_column=self.functional_group_column)
 
     def calculate_aoo(self, *, threshold: float = 0.01) -> int:
         """Calculate the Area of Occupancy (AOO) cell count for this ecosystem.
@@ -328,6 +371,220 @@ class Ecosystems(ABC):
         from rle_python_gee.eoo import make_eoo
         return make_eoo(self).compute()
 
+    def to_raster(
+        self,
+        path,
+        *,
+        crs,
+        scale,
+        mode: str = "index",
+        oversampling: int = 10,
+        nodata=None,
+    ) -> dict[int, str]:
+        """Rasterize ecosystem polygons to a Cloud Optimized GeoTIFF.
+
+        Two modes are supported:
+
+        * ``mode="index"`` (default): single-band integer raster where each
+          pixel holds the 1-based index of the ecosystem covering the
+          pixel's center (rasterio's default ``all_touched=False``
+          semantics). Indices follow the natural-sort order of
+          ``unique_ecosystems()``. Where polygons overlap at a pixel
+          center, the naturally-later code wins (rasterio's default
+          ``MergeAlg.replace`` combined with our deterministic iteration
+          order). Default nodata is the maximum value of the chosen
+          output dtype (255 / 65535 / 4294967295).
+
+        * ``mode="fraction"``: multi-band float32 raster with one band per
+          ecosystem (also in natural-sort order). Each band stores the
+          fraction of the pixel covered by that ecosystem in
+          ``[0.0, 1.0]``, computed by rasterizing a binary mask at
+          ``oversampling`` × per axis and averaging the resulting
+          sub-pixels. Each band's description tag is set to its ecosystem
+          code. Default nodata is ``NaN``.
+
+        Args:
+            path: Output COG path.
+            crs: Target CRS (EPSG code, WKT, or pyproj CRS).
+            scale: Pixel size in CRS units (meters for projected CRS).
+            mode: ``"index"`` or ``"fraction"``.
+            oversampling: Sub-pixel factor per axis for ``"fraction"``
+                mode (1..255). Ignored in ``"index"`` mode.
+            nodata: Nodata sentinel. Defaults to dtype-max in ``"index"``
+                mode and ``NaN`` in ``"fraction"`` mode.
+
+        Returns:
+            Mapping of 1-based index (= band number in fraction mode) ->
+            ecosystem code.
+        """
+        if self.kind != EcosystemKind.VECTOR_LOCAL:
+            raise NotImplementedError(
+                f"to_raster not supported for {self.kind.value}"
+            )
+        if mode not in ("index", "fraction"):
+            raise ValueError(
+                f"mode must be 'index' or 'fraction', got {mode!r}"
+            )
+        if mode == "fraction" and not (1 <= oversampling <= 255):
+            raise ValueError("oversampling must be in [1, 255]")
+
+        import json
+        import math
+        from pathlib import Path
+        import numpy as np
+        import rasterio
+        from rasterio.features import rasterize as _rio_rasterize
+        from rasterio.transform import from_origin
+        import shapely
+
+        Path(path).parent.mkdir(parents=True, exist_ok=True)
+
+        # ---- Load + validate + reproject ----
+        gdf = self.to_geodataframe()
+        if gdf.empty:
+            raise ValueError("Cannot rasterize empty ecosystem dataset")
+        if gdf.crs is None:
+            raise ValueError("Input GeoDataFrame has no CRS set")
+        gdf = gdf.copy()
+        gdf["geometry"] = shapely.make_valid(gdf.geometry)
+        gdf = gdf.to_crs(crs)
+        gdf = gdf[~(gdf.geometry.is_empty | gdf.geometry.isna())]
+        if gdf.empty:
+            raise ValueError("All geometries dropped after reprojection")
+
+        codes = self.unique_ecosystems()  # naturally sorted
+        n = len(codes)
+        if n == 0:
+            raise ValueError("No ecosystems to rasterize")
+        code_to_index = {c: i for i, c in enumerate(codes, start=1)}
+        mapping: dict[int, str] = {i: c for i, c in enumerate(codes, start=1)}
+        ecosystem_col = self.ecosystem_column
+
+        # ---- Snap target grid to pixel boundaries ----
+        minx, miny, maxx, maxy = gdf.total_bounds
+        minx = float(np.floor(minx / scale) * scale)
+        miny = float(np.floor(miny / scale) * scale)
+        maxx = float(np.ceil(maxx / scale) * scale)
+        maxy = float(np.ceil(maxy / scale) * scale)
+        W = int(round((maxx - minx) / scale))
+        H = int(round((maxy - miny) / scale))
+        transform = from_origin(minx, maxy, scale, scale)
+
+        # ---- Mode dispatch ----
+        if mode == "index":
+            # dtype: indices 1..n + reserved nodata at dtype_max
+            if n < 255:
+                dtype = np.uint8
+            elif n < 65535:
+                dtype = np.uint16
+            elif n < 4294967295:
+                dtype = np.uint32
+            else:
+                raise ValueError(
+                    f"Too many ecosystems ({n}) for to_raster"
+                )
+            dtype_str = np.dtype(dtype).name
+            dtype_max = int(np.iinfo(dtype).max)
+            if nodata is None:
+                resolved_nodata = dtype_max
+            else:
+                resolved_nodata = int(nodata)
+                if not (0 <= resolved_nodata <= dtype_max):
+                    raise ValueError(
+                        f"nodata={nodata} out of range for {dtype_str}"
+                    )
+                if 1 <= resolved_nodata <= n:
+                    raise ValueError(
+                        f"nodata={nodata} collides with valid ecosystem "
+                        f"index 1..{n}"
+                    )
+
+            # All shapes in one rasterize call. Natural-sort order combined
+            # with the default MergeAlg.replace means later codes win at
+            # overlapping pixel centers.
+            shapes = []
+            for code in codes:
+                idx = code_to_index[code]
+                for geom in gdf.loc[gdf[ecosystem_col] == code, "geometry"]:
+                    if geom is None or geom.is_empty:
+                        continue
+                    shapes.append((geom, idx))
+            arr = _rio_rasterize(
+                shapes=shapes,
+                out_shape=(H, W),
+                transform=transform,
+                fill=resolved_nodata,
+                dtype=dtype_str,
+                all_touched=False,
+            )
+            count = 1
+        else:  # mode == "fraction"
+            if nodata is None:
+                resolved_nodata = float("nan")
+            else:
+                resolved_nodata = float(nodata)
+                if not (math.isnan(resolved_nodata)
+                        or math.isfinite(resolved_nodata)):
+                    raise ValueError(
+                        f"nodata={nodata} must be finite or NaN"
+                    )
+            dtype_str = "float32"
+
+            N = oversampling
+            over_transform = from_origin(minx, maxy, scale / N, scale / N)
+            over_shape = (H * N, W * N)
+            inv_n2 = 1.0 / (N * N)
+
+            arr = np.zeros((n, H, W), dtype=np.float32)
+            for i, code in enumerate(codes, start=1):
+                subset = gdf.loc[gdf[ecosystem_col] == code, "geometry"]
+                if subset.empty:
+                    continue
+                mask = _rio_rasterize(
+                    shapes=(
+                        (geom, 1) for geom in subset if not geom.is_empty
+                    ),
+                    out_shape=over_shape,
+                    transform=over_transform,
+                    fill=0,
+                    dtype="uint8",
+                    all_touched=False,
+                )
+                cov = mask.reshape(H, N, W, N).sum(axis=(1, 3))
+                arr[i - 1, :, :] = cov.astype(np.float32) * inv_n2
+            count = n
+
+        profile = {
+            "driver": "COG",
+            "dtype": dtype_str,
+            "count": count,
+            "height": H,
+            "width": W,
+            "crs": crs,
+            "transform": transform,
+            "nodata": resolved_nodata,
+            "compress": "deflate",
+            "predictor": 2 if mode == "index" else 3,
+            "blocksize": 512,
+            "overview_resampling": "nearest" if mode == "index" else "average",
+            "BIGTIFF": "IF_SAFER",
+        }
+        with rasterio.open(path, "w", **profile) as dst:
+            if mode == "index":
+                dst.write(arr, 1)
+            else:
+                dst.write(arr)
+                for i, code in mapping.items():
+                    dst.set_band_description(i, code)
+            dst.update_tags(
+                ECOSYSTEM_COLUMN=ecosystem_col,
+                ECOSYSTEM_INDEX_JSON=json.dumps(mapping),
+                RASTERIZE_MODE=mode,
+            )
+            dst.update_tags(1, **{f"ECO_{i}": c for i, c in mapping.items()})
+
+        return mapping
+
     def _feature_count(self) -> int | None:
         """Return the number of features, or None if not applicable."""
         if hasattr(self._cached, '__len__'):
@@ -352,10 +609,7 @@ class Ecosystems(ABC):
 
     def to_parquet(self, path) -> None:
         """Write ecosystem data as a GeoParquet file."""
-        from pathlib import Path
-        Path(path).parent.mkdir(parents=True, exist_ok=True)
-        gdf = self.to_geodataframe()
-        gdf.to_parquet(path)
+        _write_parquet(self.to_geodataframe(), path)
 
     def to_geojson(self, path) -> None:
         """Write ecosystem data as a GeoJSON file."""
@@ -504,9 +758,11 @@ class EcosystemsFile(Ecosystems):
 
     kind = EcosystemKind.VECTOR_LOCAL
 
-    def __init__(self, data, *, ecosystem_column: str, ecosystem_name_column: str | None = None):
+    def __init__(self, data, *, ecosystem_column: str, ecosystem_name_column: str | None = None,
+                 functional_group_column: str | None = None):
         super().__init__(data, ecosystem_column=ecosystem_column,
-                         ecosystem_name_column=ecosystem_name_column)
+                         ecosystem_name_column=ecosystem_name_column,
+                         functional_group_column=functional_group_column)
 
     def _load(self):
         import geopandas as gpd
@@ -519,9 +775,11 @@ class EcosystemsGeoParquet(Ecosystems):
 
     kind = EcosystemKind.VECTOR_LOCAL
 
-    def __init__(self, data, *, ecosystem_column: str, ecosystem_name_column: str | None = None):
+    def __init__(self, data, *, ecosystem_column: str, ecosystem_name_column: str | None = None,
+                 functional_group_column: str | None = None):
         super().__init__(data, ecosystem_column=ecosystem_column,
-                         ecosystem_name_column=ecosystem_name_column)
+                         ecosystem_name_column=ecosystem_name_column,
+                         functional_group_column=functional_group_column)
 
     def _load(self):
         import geopandas as gpd
@@ -534,9 +792,11 @@ class EcosystemsGeoDataFrame(Ecosystems):
 
     kind = EcosystemKind.VECTOR_LOCAL
 
-    def __init__(self, data, *, ecosystem_column: str, ecosystem_name_column: str | None = None):
+    def __init__(self, data, *, ecosystem_column: str, ecosystem_name_column: str | None = None,
+                 functional_group_column: str | None = None):
         super().__init__(data, ecosystem_column=ecosystem_column,
-                         ecosystem_name_column=ecosystem_name_column)
+                         ecosystem_name_column=ecosystem_name_column,
+                         functional_group_column=functional_group_column)
         self._cached = data
 
     def _load(self):
@@ -553,9 +813,11 @@ class EcosystemsEEFeatureCollection(Ecosystems):
 
     kind = EcosystemKind.EE_FEATURE_COLLECTION
 
-    def __init__(self, data, *, ecosystem_column: str, ecosystem_name_column: str | None = None):
+    def __init__(self, data, *, ecosystem_column: str, ecosystem_name_column: str | None = None,
+                 functional_group_column: str | None = None):
         super().__init__(data, ecosystem_column=ecosystem_column,
-                         ecosystem_name_column=ecosystem_name_column)
+                         ecosystem_name_column=ecosystem_name_column,
+                         functional_group_column=functional_group_column)
 
     def _load(self):
         import ee

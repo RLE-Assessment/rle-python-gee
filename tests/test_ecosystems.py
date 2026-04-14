@@ -251,3 +251,159 @@ class TestEcosystemsExport:
         eco = EcosystemsEEImage("asset/id")
         with pytest.raises(NotImplementedError, match="not supported"):
             eco.to_ee_feature_collection("projects/test/assets/output")
+
+
+@pytest.mark.unit
+class TestEcosystemsToRaster:
+    # ---- index mode ----
+
+    def test_index_mode_creates_cog(self, tmp_path):
+        import json
+        import numpy as np
+        import rasterio
+
+        eco = EcosystemsFile(GEOJSON_PATH, ecosystem_column='ECO_CODE')
+        out = tmp_path / "eco_index.tif"
+        mapping = eco.to_raster(out, crs="ESRI:54034", scale=1000)
+
+        assert out.exists()
+        with rasterio.open(out) as src:
+            # Rasterio reports driver as GTiff for any TIFF on read; the
+            # COG layout shows up in IMAGE_STRUCTURE namespace tags.
+            assert src.driver == "GTiff"
+            assert src.tags(ns="IMAGE_STRUCTURE").get("LAYOUT") == "COG"
+            assert src.count == 1
+            assert src.dtypes[0] in ("uint8", "uint16", "uint32")
+            assert src.nodata == np.iinfo(src.dtypes[0]).max
+            arr = src.read(1)
+            unique_vals = set(np.unique(arr).tolist())
+            assert unique_vals - {src.nodata} <= set(mapping.keys())
+            assert len(unique_vals - {src.nodata}) >= 1
+            tags = src.tags()
+            recovered = {
+                int(k): v
+                for k, v in json.loads(tags["ECOSYSTEM_INDEX_JSON"]).items()
+            }
+            assert recovered == mapping
+            assert tags["RASTERIZE_MODE"] == "index"
+
+    def test_index_value_at_known_location(self, tmp_path):
+        import rasterio
+
+        eco = EcosystemsFile(GEOJSON_PATH, ecosystem_column='ECO_CODE')
+        out = tmp_path / "eco_index.tif"
+        mapping = eco.to_raster(out, crs="ESRI:54034", scale=1000)
+
+        gdf = eco.to_geodataframe().to_crs("ESRI:54034")
+        largest = gdf.geometry.iloc[gdf.geometry.area.argmax()]
+        cx, cy = largest.centroid.x, largest.centroid.y
+        with rasterio.open(out) as src:
+            row, col = src.index(cx, cy)
+            val = int(src.read(1)[row, col])
+            assert val != src.nodata
+        assert mapping[val] in eco.unique_ecosystems()
+
+    def test_index_nodata_collision_rejected(self, tmp_path):
+        eco = EcosystemsFile(GEOJSON_PATH, ecosystem_column='ECO_CODE')
+        with pytest.raises(ValueError, match="collides"):
+            eco.to_raster(tmp_path / "x.tif", crs="ESRI:54034",
+                          scale=1000, nodata=1)
+
+    # ---- fraction mode ----
+
+    def test_fraction_mode_creates_multiband_cog(self, tmp_path):
+        import math
+        import rasterio
+
+        eco = EcosystemsFile(GEOJSON_PATH, ecosystem_column='ECO_CODE')
+        codes = eco.unique_ecosystems()
+        out = tmp_path / "eco_frac.tif"
+        mapping = eco.to_raster(out, crs="ESRI:54034", scale=1000,
+                                mode="fraction", oversampling=10)
+
+        assert out.exists()
+        assert mapping == {i: c for i, c in enumerate(codes, start=1)}
+        with rasterio.open(out) as src:
+            assert src.driver == "GTiff"
+            assert src.tags(ns="IMAGE_STRUCTURE").get("LAYOUT") == "COG"
+            assert src.count == len(codes)
+            assert src.dtypes[0] == "float32"
+            assert math.isnan(src.nodata)
+            assert list(src.descriptions) == codes
+            arr = src.read()
+            assert arr.shape[0] == len(codes)
+            assert float(arr.min()) >= 0.0
+            assert float(arr.max()) <= 1.0
+            assert any(b.sum() > 0 for b in arr)
+
+    def test_fraction_band_sum_in_range(self, tmp_path):
+        """For non-overlapping ecosystems, the sum across bands at each
+        pixel must be in [0, 1]."""
+        import rasterio
+
+        eco = EcosystemsFile(GEOJSON_PATH, ecosystem_column='ECO_CODE')
+        out = tmp_path / "eco_frac.tif"
+        eco.to_raster(out, crs="ESRI:54034", scale=1000,
+                      mode="fraction", oversampling=10)
+        with rasterio.open(out) as src:
+            arr = src.read()
+            band_sum = arr.sum(axis=0)
+            assert float(band_sum.max()) <= 1.0 + 1e-6
+            assert float(band_sum.max()) > 0.0
+
+    def test_fraction_invalid_oversampling(self, tmp_path):
+        eco = EcosystemsFile(GEOJSON_PATH, ecosystem_column='ECO_CODE')
+        with pytest.raises(ValueError, match="oversampling"):
+            eco.to_raster(tmp_path / "x.tif", crs="ESRI:54034", scale=1000,
+                          mode="fraction", oversampling=0)
+
+    # ---- shared ----
+
+    def test_invalid_mode(self, tmp_path):
+        eco = EcosystemsFile(GEOJSON_PATH, ecosystem_column='ECO_CODE')
+        with pytest.raises(ValueError, match="mode must be"):
+            eco.to_raster(tmp_path / "x.tif", crs="ESRI:54034",
+                          scale=1000, mode="largest")
+
+    def test_ee_image_raises(self, tmp_path):
+        eco = EcosystemsEEImage("asset/id")
+        with pytest.raises(NotImplementedError, match="not supported"):
+            eco.to_raster(tmp_path / "x.tif", crs="EPSG:4326", scale=1000)
+
+
+@pytest.mark.unit
+class TestEcosystemsFunctionalGroupColumn:
+    def test_functional_group_column_stored(self):
+        eco = EcosystemsFile(GEOJSON_PATH, ecosystem_column='ECO_CODE',
+                             functional_group_column='EFG1')
+        assert eco.functional_group_column == 'EFG1'
+
+    def test_functional_group_column_default_none(self):
+        eco = EcosystemsFile(GEOJSON_PATH, ecosystem_column='ECO_CODE')
+        assert eco.functional_group_column is None
+
+    def test_unique_functional_groups(self):
+        eco = EcosystemsFile(GEOJSON_PATH, ecosystem_column='ECO_CODE',
+                             functional_group_column='EFG1')
+        groups = eco.unique_functional_groups()
+        assert isinstance(groups, list)
+        assert len(groups) == 3
+        # Should be naturally sorted
+        assert groups == ['M1.1', 'T1.1', 'T6.5']
+
+    def test_unique_functional_groups_raises_without_column(self):
+        eco = EcosystemsFile(GEOJSON_PATH, ecosystem_column='ECO_CODE')
+        with pytest.raises(ValueError, match="functional_group_column is not set"):
+            eco.unique_functional_groups()
+
+    def test_threaded_through_filter(self):
+        eco = EcosystemsFile(GEOJSON_PATH, ecosystem_column='ECO_CODE',
+                             functional_group_column='EFG1')
+        filtered = eco.filter('T1.1.1')
+        assert filtered.functional_group_column == 'EFG1'
+
+    def test_threaded_through_limit(self):
+        eco = EcosystemsFile(GEOJSON_PATH, ecosystem_column='ECO_CODE',
+                             functional_group_column='EFG1')
+        limited = eco.limit(1)
+        assert limited.functional_group_column == 'EFG1'
