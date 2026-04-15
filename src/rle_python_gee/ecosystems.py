@@ -365,17 +365,13 @@ class Ecosystems(ABC):
         gdf["cumulative_proportion"] = gdf["cumulative_fraction"] / total
         return int(len(gdf[gdf["cumulative_proportion"] > threshold]))
 
-    def calculate_eoo(self) -> "EOO":
-        """Calculate the Extent of Occurrence (EOO) for this ecosystem.
-
-        Computes the convex hull of all ecosystem geometries and returns
-        an EOO object with the area in km².
-
-        Returns:
-            A computed EOO instance. Access area via ``.area_km2``.
-        """
-        from rle_python_gee.eoo import make_eoo
-        return make_eoo(self).compute()
+    @property
+    def eoo(self) -> float:
+        """EOO area in km². Cached after first access."""
+        if not hasattr(self, '_eoo'):
+            from rle_python_gee.eoo import make_eoo
+            self._eoo = make_eoo(self).compute().area_km2
+        return self._eoo
 
     def to_raster(
         self,
