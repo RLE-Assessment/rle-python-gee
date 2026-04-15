@@ -299,6 +299,14 @@ class AOOGrid(ABC):
             line_width_min_pixels=1,
         )]
 
+    def to_gdf_for_viz(self, *, get_fill_color=None, get_line_color=None, **_):
+        """Return (gdf, style_dict) for static-image fallback rendering."""
+        if get_fill_color is None:
+            get_fill_color = [128, 128, 128, 128]
+        if get_line_color is None:
+            get_line_color = [0, 0, 0, 255]
+        return self.grid_cells, {"fill": get_fill_color, "edge": get_line_color}
+
     def to_map(self, *, get_fill_color=None, get_line_color=None, **kwargs):
         """Return a lonboard Map showing the AOO grid cells."""
         try:
@@ -938,6 +946,16 @@ class AOOGridPolygons(ABC):
             get_line_color=get_line_color,
             line_width_min_pixels=1,
         )]
+
+    def to_gdf_for_viz(self, *, get_fill_color=None, get_line_color=None, **_):
+        """Return (gdf, style_dict) for static-image fallback rendering."""
+        if not self._computed:
+            raise AOOGridPolygonsNotComputedError()
+        if get_fill_color is None:
+            get_fill_color = [0, 128, 255, 128]
+        if get_line_color is None:
+            get_line_color = [0, 0, 0, 255]
+        return self.polygons, {"fill": get_fill_color, "edge": get_line_color}
 
     def to_map(self, *, get_fill_color=None, get_line_color=None, **kwargs):
         """Return a lonboard Map of the intersection polygons."""

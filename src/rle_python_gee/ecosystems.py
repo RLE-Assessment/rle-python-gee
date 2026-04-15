@@ -667,6 +667,18 @@ class Ecosystems(ABC):
             line_width_min_pixels=1,
         )]
 
+    def to_gdf_for_viz(self, *, get_fill_color=None, get_line_color=None, **_):
+        """Return (gdf, style_dict) for static-image fallback rendering."""
+        if self.kind != EcosystemKind.VECTOR_LOCAL:
+            raise NotImplementedError(
+                f"Static rendering not supported for {self.kind.value}"
+            )
+        if get_fill_color is None:
+            get_fill_color = [0, 255, 0, 128]
+        if get_line_color is None:
+            get_line_color = [0, 0, 0, 255]
+        return self.load(), {"fill": get_fill_color, "edge": get_line_color}
+
     def to_map(self, *, max_features: int = 1000, **kwargs):
         """Return a lonboard Map showing the ecosystem polygons.
 
