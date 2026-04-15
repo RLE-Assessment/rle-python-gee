@@ -778,6 +778,13 @@ class EcosystemsGeoParquet(Ecosystems):
     def _load(self):
         import geopandas as gpd
 
+        if isinstance(self._data, str) and self._data.startswith(
+            ("http://", "https://", "gs://", "s3://", "az://")
+        ):
+            import fsspec
+
+            with fsspec.open(self._data, "rb") as f:
+                return gpd.read_parquet(f)
         return gpd.read_parquet(self._data)
 
 
