@@ -712,7 +712,9 @@ class Ecosystems(ABC):
 
     @classmethod
     def from_file(cls, path, *, ecosystem_column: str, **kwargs) -> "Ecosystems":
-        """Create from a vector file (Shapefile, GeoJSON, etc.)."""
+        """Create from a vector file (Shapefile, GeoJSON, GeoParquet, etc.)."""
+        if isinstance(path, str) and path.endswith(".parquet"):
+            return EcosystemsGeoParquet(path, ecosystem_column=ecosystem_column, **kwargs)
         return EcosystemsFile(path, ecosystem_column=ecosystem_column, **kwargs)
 
     @classmethod
