@@ -17,6 +17,7 @@ from rle_python_gee.aoo import (
     AOOGridPolygonsNotComputedError,
     AOOGridVectorLocal,
     make_aoo_grid,
+    make_aoo_grid_cached,
     make_aoo_polygons,
 )
 from rle_python_gee.ecosystems import (
@@ -280,6 +281,51 @@ class TestBackwardCompatAliases:
     def test_geoparquet_alias(self):
         from rle_python_gee.aoo import AOOGridGeoParquet
         assert AOOGridGeoParquet is AOOGridVectorLocal
+
+
+# ---------------------------------------------------------------------------
+# make_aoo_grid_cached tests
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+class TestMakeAOOGridCached:
+    def test_cache_miss_writes_file(self, tmp_path):
+        cache_path = tmp_path / "aoo.parquet"
+        eco = Ecosystems.from_file(GEOJSON_PATH, ecosystem_column='ECO_NAME')
+        aoo = make_aoo_grid_cached(eco, cache_path=cache_path)
+        assert cache_path.exists()
+        assert len(aoo.grid_cells) > 0
+
+    def test_cache_hit_skips_compute(self, tmp_path):
+        cache_path = tmp_path / "aoo.parquet"
+        eco = Ecosystems.from_file(GEOJSON_PATH, ecosystem_column='ECO_NAME')
+        first = make_aoo_grid_cached(eco, cache_path=cache_path)
+
+        with patch.object(
+            AOOGridVectorLocal, "_compute",
+            side_effect=AssertionError("compute must not run on cache hit"),
+        ):
+            second = make_aoo_grid_cached(eco, cache_path=cache_path)
+
+        assert len(second.grid_cells) == len(first.grid_cells)
+        assert second.grid_cells.crs is not None
+
+    def test_filter_works_after_cache_hit(self, tmp_path):
+        cache_path = tmp_path / "aoo.parquet"
+        eco = Ecosystems.from_file(GEOJSON_PATH, ecosystem_column='ECO_NAME')
+        make_aoo_grid_cached(eco, cache_path=cache_path)
+
+        reloaded = make_aoo_grid_cached(eco, cache_path=cache_path)
+        filtered = reloaded.filter_by_ecosystem('Null Island Tropical Forest')
+        assert len(filtered.grid_cells) > 0
+
+    def test_parent_dir_autocreated(self, tmp_path):
+        cache_path = tmp_path / "nested" / "dirs" / "aoo.parquet"
+        eco = Ecosystems.from_file(GEOJSON_PATH, ecosystem_column='ECO_NAME')
+        aoo = make_aoo_grid_cached(eco, cache_path=cache_path)
+        assert cache_path.exists()
+        assert len(aoo.grid_cells) > 0
 
 
 # ---------------------------------------------------------------------------

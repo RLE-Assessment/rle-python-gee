@@ -794,6 +794,40 @@ def make_aoo_grid(data, **kwargs) -> AOOGrid:
     return make_aoo_grid(eco, **aoo_kwargs)
 
 
+def make_aoo_grid_cached(data, *, cache_path, **kwargs) -> AOOGrid:
+    """Return an AOOGrid backed by a local GeoParquet cache at ``cache_path``.
+
+    On cache hit, the grid cells are loaded from the parquet file and
+    ``compute()`` is skipped. On cache miss, the grid is computed normally
+    and the result is written to ``cache_path`` for next time.
+
+    The returned AOOGrid behaves identically to ``make_aoo_grid(...).compute()``
+    — ``grid_cells``, ``filter_by_ecosystem``, ``to_layer``, ``aoo_km2`` etc.
+    all work the same way.
+
+    Cache invalidation is the caller's responsibility: delete ``cache_path``
+    if the source data changes.
+
+    Args:
+        data: Same as ``make_aoo_grid`` — an Ecosystems instance, a path, or
+            an Earth Engine object.
+        cache_path: Local path or ``gs://`` URI for the GeoParquet cache file.
+            Parent directories are created on write.
+        **kwargs: Forwarded to ``make_aoo_grid``.
+    """
+    aoo = make_aoo_grid(data, **kwargs)
+    cache_path_str = str(cache_path)
+    if _remote_file_exists(cache_path_str):
+        aoo._grid_cells = gpd.read_parquet(cache_path_str)
+        aoo._computed = True
+        logger.info("Loaded AOO grid from cache: %s", cache_path_str)
+        return aoo
+    aoo.compute()
+    aoo.to_parquet(cache_path_str)
+    logger.info("Wrote AOO grid cache: %s", cache_path_str)
+    return aoo
+
+
 # ---------------------------------------------------------------------------
 # AOO Grid Polygons — intersection geometries
 # ---------------------------------------------------------------------------
