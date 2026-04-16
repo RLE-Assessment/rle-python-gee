@@ -94,6 +94,14 @@ class EOO(ABC):
             crs=self._crs,
         )
 
+    def to_gdf_for_viz(self, *, get_fill_color=None, get_line_color=None, **_):
+        """Return (gdf, style_dict) for static-image fallback rendering."""
+        if get_fill_color is None:
+            get_fill_color = [255, 0, 0, 40]
+        if get_line_color is None:
+            get_line_color = [255, 0, 0, 255]
+        return self.to_geodataframe(), {"fill": get_fill_color, "edge": get_line_color}
+
     def to_layer(self, *, get_fill_color=None, get_line_color=None):
         """Return a lonboard PolygonLayer of the EOO convex hull."""
         try:
