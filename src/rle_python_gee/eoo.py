@@ -104,6 +104,10 @@ class EOO(ABC):
 
     def to_layer(self, *, get_fill_color=None, get_line_color=None):
         """Return a lonboard PolygonLayer of the EOO convex hull."""
+        gdf = self.to_geodataframe()
+        if gdf.geometry.is_empty.all():
+            return []
+
         try:
             from lonboard import PolygonLayer
         except ImportError:
@@ -118,7 +122,7 @@ class EOO(ABC):
             get_line_color = [255, 0, 0, 255]
 
         return [PolygonLayer.from_geopandas(
-            self.to_geodataframe(),
+            gdf,
             get_fill_color=get_fill_color,
             get_line_color=get_line_color,
             line_width_min_pixels=2,
@@ -171,6 +175,17 @@ class EOOVectorLocal(EOO):
         # Union all geometries, then compute convex hull
         union = gdf.geometry.union_all()
         hull = union.convex_hull
+
+        # Degenerate inputs (single point, collinear points, empty) produce
+        # Point/LineString/GeometryCollection which lonboard cannot render.
+        geom_type = hull.geom_type if hull is not None and not hull.is_empty else None
+        if geom_type not in ("Polygon", "MultiPolygon"):
+            from shapely import Polygon
+            if hull is None or hull.is_empty:
+                hull = Polygon()
+            else:
+                hull = hull.buffer(0.0001)
+
         self._computed_geometry = hull
 
         # Compute area in km² using equal-area projection (ESRI:54034)
