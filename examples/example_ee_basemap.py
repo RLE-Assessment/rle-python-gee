@@ -1,7 +1,7 @@
 """Example usage of create_country_map with Earth Engine basemaps."""
 
 import ee
-from rle_python_gee.map import create_country_map
+from rle.gee.map import create_country_map
 import os
 import matplotlib as mpl
 

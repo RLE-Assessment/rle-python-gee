@@ -1,10 +1,13 @@
+"""Command-line interface for rle-python-gee."""
+
 import typer
 from typing_extensions import Annotated
-from rle_python_gee.ee_auth import print_authentication_status
-from rle_python_gee import __version__
+
+from rle.gee import __version__
+from rle.gee.auth import print_authentication_status
 
 app = typer.Typer(
-    name="rle-python-gee",
+    name="rle-gee",
     help="Google Earth Engine tools for IUCN Red List analysis",
     add_completion=False,
 )
@@ -25,7 +28,7 @@ def main(
         typer.Option("--version", "-v", help="Show version and exit"),
     ] = False,
 ):
-    """Main entry point for rle-python-gee CLI."""
+    """Main entry point for the rle-gee CLI."""
     if version:
         print(f"rle-python-gee version {__version__}")
         raise typer.Exit()

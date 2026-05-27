@@ -3,8 +3,8 @@
 import pytest
 from unittest.mock import Mock, patch, MagicMock
 import ee
-from rle_python_gee import ee_rle
-from rle_python_gee.ee_rle import _compute_eoo_ee_image
+from rle.gee import ee_rle
+from rle.gee.ee_rle import _compute_eoo_ee_image
 from google.auth import default
 
 
@@ -26,7 +26,7 @@ def get_test_geometry():
 class TestMakeEOO:
     """Tests for the make_eoo function."""
 
-    @patch('rle_python_gee.ee_rle.ee')
+    @patch('rle.gee.ee_rle.ee')
     def test_make_eoo_basic(self, mock_ee):
         """Test that make_eoo calls the correct Earth Engine methods."""
         # Create mock objects for the chain of method calls
@@ -72,7 +72,7 @@ class TestMakeEOO:
         # convexHull is called twice (workaround for GEE bug), so we check it was called with maxError=1
         mock_geometry.convexHull.assert_called_with(maxError=1)
 
-    @patch('rle_python_gee.ee_rle.ee')
+    @patch('rle.gee.ee_rle.ee')
     def test_make_eoo_custom_parameters(self, mock_ee):
         """Test make_eoo with custom parameters."""
         mock_image = Mock()
@@ -114,7 +114,7 @@ class TestMakeEOO:
         # convexHull is called twice, check it was called with custom maxError
         mock_geometry.convexHull.assert_called_with(maxError=10)
 
-    @patch('rle_python_gee.ee_rle.ee')
+    @patch('rle.gee.ee_rle.ee')
     def test_make_eoo_returns_geometry(self, mock_ee):
         """Test that make_eoo returns an ee.Geometry object."""
         mock_image = Mock()
@@ -142,7 +142,7 @@ class TestMakeEOO:
 class TestAreaKm2:
     """Tests for the area_km2 function."""
 
-    @patch('rle_python_gee.ee_rle.ee')
+    @patch('rle.gee.ee_rle.ee')
     def test_area_km2_basic(self, mock_ee):
         """Test that area_km2 calculates area correctly."""
         # Create mock geometry with area
@@ -162,7 +162,7 @@ class TestAreaKm2:
         # Verify result
         assert result == mock_area_km2
 
-    @patch('rle_python_gee.ee_rle.ee')
+    @patch('rle.gee.ee_rle.ee')
     def test_area_km2_returns_ee_number(self, mock_ee):
         """Test that area_km2 returns an ee.Number."""
         mock_geometry = Mock()
@@ -178,7 +178,7 @@ class TestAreaKm2:
 class TestEnsureAssetFolderExists:
     """Tests for the ensure_asset_folder_exists function."""
 
-    @patch('rle_python_gee.ee_rle.ee.data')
+    @patch('rle.gee.ee_rle.ee.data')
     def test_folder_already_exists(self, mock_data):
         """Test when folder already exists."""
         # Setup: getAsset succeeds (folder exists)
@@ -194,7 +194,7 @@ class TestEnsureAssetFolderExists:
         # Verify function returns False (not created)
         assert result is False
 
-    @patch('rle_python_gee.ee_rle.ee.data')
+    @patch('rle.gee.ee_rle.ee.data')
     def test_folder_does_not_exist(self, mock_data):
         """Test when folder doesn't exist and needs to be created."""
         # Setup: getAsset raises exception (folder doesn't exist)
@@ -211,7 +211,7 @@ class TestEnsureAssetFolderExists:
         # Verify function returns True (was created)
         assert result is True
 
-    @patch('rle_python_gee.ee_rle.ee.data')
+    @patch('rle.gee.ee_rle.ee.data')
     def test_folder_creation_with_ecosystem_code(self, mock_data):
         """Test folder creation with realistic ecosystem folder path."""
         # Setup: folder doesn't exist
@@ -230,7 +230,7 @@ class TestEnsureAssetFolderExists:
 class TestCreateAssetFolder:
     """Tests for the create_asset_folder function."""
 
-    @patch('rle_python_gee.ee_rle.ee.data')
+    @patch('rle.gee.ee_rle.ee.data')
     def test_create_folder_when_not_exists(self, mock_data):
         """Test folder creation when folder doesn't exist."""
         # Setup: getAsset raises exception (folder doesn't exist)
@@ -247,7 +247,7 @@ class TestCreateAssetFolder:
         # Verify function returns True (folder was created)
         assert result is True
 
-    @patch('rle_python_gee.ee_rle.ee.data')
+    @patch('rle.gee.ee_rle.ee.data')
     def test_create_folder_when_already_exists(self, mock_data):
         """Test folder creation when folder already exists."""
         # Setup: getAsset succeeds (folder exists)
@@ -263,7 +263,7 @@ class TestCreateAssetFolder:
         # Verify function returns False (folder already existed)
         assert result is False
 
-    @patch('rle_python_gee.ee_rle.ee.data')
+    @patch('rle.gee.ee_rle.ee.data')
     def test_create_folder_with_ecosystem_path(self, mock_data):
         """Test folder creation with realistic ecosystem folder path."""
         # Setup: folder doesn't exist
@@ -276,37 +276,6 @@ class TestCreateAssetFolder:
         # Verify createFolder was called with the correct path
         mock_data.createFolder.assert_called_once_with(folder_path)
         assert result is True
-
-
-@pytest.mark.unit
-class TestMakeAOO:
-    """Tests for the make_aoo_grid function (now returns AOOGrid)."""
-
-    def test_make_aoo_grid_returns_aoo_grid_for_ee_image(self):
-        """Test that make_aoo_grid returns an AOOGridEEImage for ee.Image objects."""
-        from rle_python_gee.aoo import AOOGridEEImage
-
-        mock_image = MagicMock(spec=ee.Image)
-        result = ee_rle.make_aoo_grid(mock_image)
-        assert isinstance(result, AOOGridEEImage)
-
-    def test_make_aoo_grid_returns_aoo_grid_for_parquet(self):
-        """Test that make_aoo_grid returns AOOGridGeoParquet for .parquet paths."""
-        from rle_python_gee.aoo import AOOGridGeoParquet
-
-        result = ee_rle.make_aoo_grid("/fake/path.parquet", ecosystem_column='ECO_NAME')
-        assert isinstance(result, AOOGridGeoParquet)
-
-    def test_make_aoo_grid_returns_aoo_grid_for_ee_fc(self):
-        """Test that make_aoo_grid returns AOOGridEEFeatureCollection for ee.FeatureCollection."""
-        from rle_python_gee.aoo import AOOGridEEFeatureCollection
-
-        mock_fc = MagicMock(spec=ee.FeatureCollection)
-        result = ee_rle.make_aoo_grid(
-            mock_fc, ecosystem_column='ECO_NAME',
-            gee_asset_path='projects/test/assets/cache',
-        )
-        assert isinstance(result, AOOGridEEFeatureCollection)
 
 
 @pytest.mark.integration
@@ -480,19 +449,4 @@ class TestIntegrationWithRealEE:
                 ee.data.deleteAsset(test_folder)
             except Exception:
                 pass  # Ignore errors during cleanup
-
-    def test_make_aoo_grid_integration(self):
-        """Integration test for make_aoo_grid with real Earth Engine."""
-        from rle_python_gee.aoo import AOOGrid
-
-        # Use an existing fractional coverage asset from the test ecosystem
-        asset_id = 'projects/goog-rle-assessments/assets/MMR-T1_1_1/a00_grid'
-
-        aoo = ee_rle.make_aoo_grid(asset_id)
-        assert isinstance(aoo, AOOGrid)
-
-        # Verify the cell count is reasonable
-        assert aoo.cell_count > 0, f"Expected cell_count > 0, got {aoo.cell_count}"
-        assert aoo.cell_count < 100000, f"Expected cell_count < 100000, got {aoo.cell_count}"
-        assert aoo.aoo_km2 > 0
 

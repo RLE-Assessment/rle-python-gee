@@ -1,5 +1,5 @@
 import ee
-from rle_python_gee.ee_rle import make_eoo, area_km2
+from rle.gee.ee_rle import _compute_eoo_ee_image as make_eoo, area_km2
 
 def main():
     """Main function to calculate the EOO of a binary habitat map."""
