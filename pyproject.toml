@@ -27,9 +27,6 @@ rle-gee = "rle.gee.cli:app"
 [project.entry-points."rle.backends"]
 gee = "rle.gee._entrypoints:register"
 
-[tool.uv.sources]
-rle-python = { path = "../rle-python", editable = true }
-
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"

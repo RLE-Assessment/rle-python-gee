@@ -24,7 +24,15 @@ pip install rle-python-gee
 With [uv](https://docs.astral.sh/uv/) from a clone of this repo:
 
 ```bash
-uv sync          # installs rle-python-gee + rle-python (editable sibling)
+uv sync                                   # installs rle-python-gee + rle-python from git/PyPI
+```
+
+To develop against a sibling editable checkout of `rle-python` instead, add
+the override after sync:
+
+```bash
+uv sync
+uv pip install -e ../rle-python --reinstall   # swap in editable sibling
 ```
 
 ## Usage
