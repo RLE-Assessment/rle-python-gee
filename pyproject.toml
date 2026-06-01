@@ -1,6 +1,6 @@
 [project]
 name = "rle-python-gee"
-version = "0.2.0"
+version = "0.2.1"
 description = "Google Earth Engine data-access backends for rle-python (IUCN Red List of Ecosystems)"
 readme = "README.md"
 requires-python = ">=3.11,<3.13"
